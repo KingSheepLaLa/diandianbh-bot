@@ -11,30 +11,35 @@
     <div class="container mx-auto px-4 py-8">
         <!-- 顶部卡片：状态概览 -->
         <div class="bg-white rounded-lg shadow-lg p-6 mb-8">
-            <h1 class="text-2xl font-bold text-gray-800 mb-4">点点开黑自动挂厅控制台</h1>
+            <div class="flex justify-between items-center mb-6">
+                <h1 class="text-2xl font-bold text-gray-800">点点开黑自动挂厅控制台</h1>
+                <div id="systemTime" class="text-sm text-gray-600"></div>
+            </div>
+            
             <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <!-- 用户信息卡片 -->
                 <div class="bg-blue-50 p-4 rounded-lg">
-                    <h3 class="text-lg font-semibold text-blue-800">账号状态</h3>
-                    <div class="mt-2" id="userInfo">
-                        <p>未登录</p>
+                    <h3 class="text-lg font-semibold text-blue-800 mb-3">账号状态</h3>
+                    <div id="userInfo" class="space-y-2">
+                        <p class="text-gray-600">加载中...</p>
                     </div>
                 </div>
                 
                 <!-- 运行状态卡片 -->
                 <div class="bg-green-50 p-4 rounded-lg">
-                    <h3 class="text-lg font-semibold text-green-800">运行状态</h3>
-                    <div class="mt-2">
-                        <p>心跳状态: <span id="heartbeatStatus">-</span></p>
-                        <p>最后心跳: <span id="lastHeartbeat">-</span></p>
+                    <h3 class="text-lg font-semibold text-green-800 mb-3">运行状态</h3>
+                    <div class="space-y-2">
+                        <p>心跳状态: <span id="heartbeatStatus" class="font-medium">-</span></p>
+                        <p>最后心跳: <span id="lastHeartbeat" class="text-gray-600">-</span></p>
                     </div>
                 </div>
 
-                <!-- 操作记录卡片 -->
+                <!-- 系统信息卡片 -->
                 <div class="bg-purple-50 p-4 rounded-lg">
-                    <h3 class="text-lg font-semibold text-purple-800">运行时长</h3>
-                    <div class="mt-2">
-                        <p>已运行: <span id="runningTime">-</span></p>
+                    <h3 class="text-lg font-semibold text-purple-800 mb-3">系统信息</h3>
+                    <div class="space-y-2">
+                        <p>运行时长: <span id="runningTime" class="text-gray-600">-</span></p>
+                        <p>系统状态: <span id="systemStatus" class="text-green-600 font-medium">正常</span></p>
                     </div>
                 </div>
             </div>
@@ -49,7 +54,7 @@
                         Cookie 值
                     </label>
                     <textarea
-                        class="w-full px-3 py-2 border rounded-lg focus:outline-none focus:border-blue-500"
+                        class="w-full px-3 py-2 border rounded-lg focus:outline-none focus:border-blue-500 font-mono text-sm"
                         id="cookie"
                         name="cookie"
                         rows="3"
@@ -64,9 +69,10 @@
                         <li>使用浏览器访问并登录点点开黑网站</li>
                         <li>按F12打开开发者工具（或右键点击 -> 检查）</li>
                         <li>切换到"网络"(Network)标签</li>
+                        <li>筛选器中选择"Fetch/XHR"</li>
                         <li>刷新页面</li>
-                        <li>在请求列表中点击任意请求</li>
-                        <li>在右侧找到"Cookie"并复制完整值</li>
+                        <li>点击任意请求，在右侧找到"请求标头"</li>
+                        <li>找到并复制 Cookie 行的完整内容</li>
                     </ol>
                 </div>
 
@@ -79,10 +85,11 @@
 
         <!-- 日志记录区域 -->
         <div class="bg-white rounded-lg shadow-lg p-6">
-            <h2 class="text-xl font-semibold text-gray-800 mb-4">运行日志</h2>
-            <div id="logContainer" class="bg-gray-50 p-4 rounded-lg h-48 overflow-y-auto font-mono text-sm">
-                <!-- 日志内容会通过JavaScript动态添加 -->
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-xl font-semibold text-gray-800">运行日志</h2>
+                <button id="clearLogs" class="text-sm text-gray-500 hover:text-gray-700">清除日志</button>
             </div>
+            <div id="logContainer" class="bg-gray-50 p-4 rounded-lg h-48 overflow-y-auto font-mono text-sm"></div>
         </div>
     </div>
 

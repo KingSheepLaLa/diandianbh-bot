@@ -1,29 +1,29 @@
 // api/index.js
 
-// 引入必要的库
-const express = require('express');         // Web服务器框架
-const axios = require('axios');             // HTTP请求工具
-const path = require('path');               // 文件路径处理工具
+// 引入必需的模块
+const express = require('express');
+const axios = require('axios');
+const path = require('path');
 
-// 创建Express应用实例
+// 创建Express应用
 const app = express();
 
-// 配置中间件
-app.use(express.json());                    // 处理JSON格式的请求体
-app.use(express.urlencoded({ extended: true })); // 处理表单数据
-app.use(express.static(path.join(__dirname, '../public'))); // 提供静态文件服务
+// 配置Express中间件
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+app.use(express.static(path.join(__dirname, '../public')));
 
 // 全局状态变量
-let currentCookie = '';           // 当前使用的Cookie
-let lastHeartbeatTime = null;     // 最后一次心跳时间
-let heartbeatStatus = false;      // 心跳状态
-let userData = null;              // 用户信息缓存
+let currentCookie = '';           // 存储当前使用的Cookie
+let lastHeartbeatTime = null;     // 记录最后一次心跳时间
+let heartbeatStatus = false;      // 记录心跳状态
+let userData = null;              // 存储用户信息
+const startTime = new Date();     // 记录系统启动时间
 
-// 创建axios实例，设置通用配置
+// 创建axios实例，配置通用请求头
 const api = axios.create({
-    timeout: 10000,  // 10秒超时
+    timeout: 10000,  // 10秒超时时间
     headers: {
-        // 完整的浏览器标识，确保请求看起来像真实浏览器发出的
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36 Edg/132.0.0.0',
         'Accept': '*/*',
         'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8,en-GB;q=0.7,en-US;q=0.6',
@@ -38,20 +38,34 @@ const api = axios.create({
 });
 
 /**
- * 获取用户信息
+ * 获取用户信息和验证登录状态
  * @param {string} cookie - 用户的Cookie字符串
- * @returns {Promise<Object>} 包含用户信息的对象
+ * @returns {Promise<Object>} 包含用户信息和登录状态的对象
  */
 async function getUserInfo(cookie) {
     try {
+        // 首先验证登录状态
+        const loginCheckResponse = await api.get('https://y.tuwan.com/ajax/checkLogin', {
+            headers: {
+                'Cookie': cookie,
+                'Referer': 'https://y.tuwan.com/'
+            }
+        });
+
+        // 如果登录检查失败，直接返回
+        if (!loginCheckResponse.data || loginCheckResponse.data.status !== 1) {
+            console.log('登录状态检查失败:', loginCheckResponse.data);
+            return {
+                success: false,
+                message: '登录状态验证失败'
+            };
+        }
+
+        // 获取详细的用户信息
         const timestamp = Date.now();
-        const jqueryCallback = `jQuery${Math.random().toString().slice(2)}_${timestamp}`;
-        
-        // 发送请求到用户信息API
-        const response = await api.get('https://papi.tuwan.com/Chatroom/getuserinfo', {
+        const userInfoResponse = await api.get('https://activity.tuwan.com/Activitymanagement/getUserInfo', {
             params: {
-                uids: '10290613',
-                callback: jqueryCallback,
+                callback: `jQuery${Math.random().toString().slice(2)}_${timestamp}`,
                 _: timestamp
             },
             headers: {
@@ -61,19 +75,23 @@ async function getUserInfo(cookie) {
         });
 
         // 解析JSONP响应
-        const match = response.data.match(/jQuery.*?\((.*?)\)/);
+        const match = userInfoResponse.data.match(/\((.*?)\)/);
         if (match) {
             const data = JSON.parse(match[1]);
             console.log('用户信息获取成功:', data);
             return {
                 success: true,
-                data: data
+                data: {
+                    ...data,
+                    isLoggedIn: true,
+                    lastUpdate: new Date().toISOString()
+                }
             };
         }
 
         return {
             success: false,
-            message: '解析用户信息失败'
+            message: '用户信息解析失败'
         };
     } catch (error) {
         console.error('获取用户信息失败:', error.message);
@@ -85,7 +103,7 @@ async function getUserInfo(cookie) {
 }
 
 /**
- * 执行心跳检测，保持在线状态
+ * 执行心跳检测以保持在线状态
  * @returns {Promise<boolean>} 心跳是否成功
  */
 async function heartbeat() {
@@ -99,8 +117,8 @@ async function heartbeat() {
         const timestamp = Date.now();
         const response = await api.get('https://activity.tuwan.com/Activitymanagement/activity', {
             params: {
-                cid: '25293',          // 房间ID
-                from: '1',             // 来源标识
+                cid: '25293',
+                from: '1',
                 callback: `jQuery${Math.random().toString().slice(2)}_${timestamp}`,
                 _: timestamp
             },
@@ -109,8 +127,14 @@ async function heartbeat() {
                 'Referer': 'https://y.tuwan.com/'
             }
         });
-        
-        // 更新心跳状态
+
+        // 检查响应中是否包含错误信息
+        if (response.data.includes('登录已过期') || response.data.includes('请先登录')) {
+            console.log('心跳检测发现登录已过期');
+            heartbeatStatus = false;
+            return false;
+        }
+
         lastHeartbeatTime = new Date();
         heartbeatStatus = true;
         console.log('心跳检测成功:', lastHeartbeatTime.toISOString());
@@ -141,13 +165,16 @@ app.post('/api/update-cookie', async (req, res) => {
             currentCookie = cookie;
             userData = userInfoResult.data;
             
-            // 更新Cookie后立即执行一次心跳检测
-            await heartbeat();
+            // 立即执行一次心跳检测
+            const heartbeatResult = await heartbeat();
             
             res.json({
                 success: true,
                 message: '登录成功',
-                data: userInfoResult.data
+                data: {
+                    ...userInfoResult.data,
+                    heartbeatStatus: heartbeatResult
+                }
             });
         } else {
             res.json({
@@ -167,21 +194,34 @@ app.post('/api/update-cookie', async (req, res) => {
 // API路由：获取当前状态
 app.get('/api/status', async (req, res) => {
     try {
-        // 如果已登录，刷新用户信息
+        let loginStatus = false;
+        let userDetails = null;
+
         if (currentCookie) {
-            const userInfoResult = await getUserInfo(currentCookie);
-            if (userInfoResult.success) {
-                userData = userInfoResult.data;
+            const checkResult = await getUserInfo(currentCookie);
+            if (checkResult.success) {
+                loginStatus = true;
+                userDetails = checkResult.data;
+            } else {
+                // 如果验证失败，清除Cookie
+                currentCookie = '';
+                heartbeatStatus = false;
             }
         }
 
         res.json({
-            isLoggedIn: !!currentCookie,
+            isLoggedIn: loginStatus,
             lastHeartbeat: lastHeartbeatTime,
             heartbeatStatus: heartbeatStatus,
-            userData: userData
+            userData: userDetails,
+            systemStatus: {
+                startTime: startTime,
+                uptime: Date.now() - startTime,
+                currentTime: new Date().toISOString()
+            }
         });
     } catch (error) {
+        console.error('状态获取失败:', error);
         res.status(500).json({
             success: false,
             message: '获取状态失败',
@@ -199,28 +239,39 @@ app.get('/', (req, res) => {
 app.get('/health', (req, res) => {
     res.json({ 
         status: 'ok',
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
+        uptime: Date.now() - startTime
     });
 });
 
-// 设置定时心跳检测（每5分钟一次）
+// 设置定时心跳检测（每5分钟执行一次）
 setInterval(heartbeat, 5 * 60 * 1000);
+
+// 设置定期检查登录状态（每15分钟执行一次）
+setInterval(async () => {
+    if (currentCookie) {
+        const checkResult = await getUserInfo(currentCookie);
+        if (!checkResult.success) {
+            console.log('定期检查发现登录状态已失效');
+            currentCookie = '';
+            heartbeatStatus = false;
+        }
+    }
+}, 15 * 60 * 1000);
 
 // 启动服务器
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
     console.log(`服务器启动成功，运行在端口 ${PORT}`);
-    // 服务启动后立即获取一次用户信息（如果有Cookie的话）
+    // 如果有Cookie，立即验证并开始心跳
     if (currentCookie) {
         getUserInfo(currentCookie).then(result => {
             if (result.success) {
                 userData = result.data;
-                // 初始化完成后执行第一次心跳
                 return heartbeat();
             }
         }).catch(console.error);
     }
 });
 
-// 导出app实例供Vercel使用
 module.exports = app;
