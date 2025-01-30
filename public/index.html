@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>点点开黑 - 自动挂厅控制台</title>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="/style.css">
+</head>
+<body class="bg-gray-50 min-h-screen">
+    <div class="container mx-auto px-4 py-8">
+        <!-- 顶部卡片：状态概览 -->
+        <div class="bg-white rounded-lg shadow-lg p-6 mb-8">
+            <h1 class="text-2xl font-bold text-gray-800 mb-4">点点开黑自动挂厅控制台</h1>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <!-- 用户信息卡片 -->
+                <div class="bg-blue-50 p-4 rounded-lg">
+                    <h3 class="text-lg font-semibold text-blue-800">账号状态</h3>
+                    <div class="mt-2" id="userInfo">
+                        <p>未登录</p>
+                    </div>
+                </div>
+                
+                <!-- 运行状态卡片 -->
+                <div class="bg-green-50 p-4 rounded-lg">
+                    <h3 class="text-lg font-semibold text-green-800">运行状态</h3>
+                    <div class="mt-2">
+                        <p>心跳状态: <span id="heartbeatStatus">-</span></p>
+                        <p>最后心跳: <span id="lastHeartbeat">-</span></p>
+                    </div>
+                </div>
+
+                <!-- 操作记录卡片 -->
+                <div class="bg-purple-50 p-4 rounded-lg">
+                    <h3 class="text-lg font-semibold text-purple-800">运行时长</h3>
+                    <div class="mt-2">
+                        <p>已运行: <span id="runningTime">-</span></p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Cookie配置区域 -->
+        <div class="bg-white rounded-lg shadow-lg p-6 mb-8">
+            <h2 class="text-xl font-semibold text-gray-800 mb-4">Cookie 配置</h2>
+            <form id="cookieForm" class="space-y-4">
+                <div>
+                    <label class="block text-gray-700 text-sm font-bold mb-2" for="cookie">
+                        Cookie 值
+                    </label>
+                    <textarea
+                        class="w-full px-3 py-2 border rounded-lg focus:outline-none focus:border-blue-500"
+                        id="cookie"
+                        name="cookie"
+                        rows="3"
+                        required
+                        placeholder="请粘贴从浏览器复制的Cookie值"></textarea>
+                </div>
+
+                <!-- Cookie获取教程 -->
+                <div class="bg-blue-50 p-4 rounded-lg">
+                    <h3 class="text-sm font-semibold text-blue-800 mb-2">如何获取Cookie？</h3>
+                    <ol class="text-sm text-blue-700 space-y-1 list-decimal list-inside">
+                        <li>使用浏览器访问并登录点点开黑网站</li>
+                        <li>按F12打开开发者工具（或右键点击 -> 检查）</li>
+                        <li>切换到"网络"(Network)标签</li>
+                        <li>刷新页面</li>
+                        <li>在请求列表中点击任意请求</li>
+                        <li>在右侧找到"Cookie"并复制完整值</li>
+                    </ol>
+                </div>
+
+                <button type="submit"
+                    class="w-full bg-blue-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-blue-700 transition duration-200">
+                    更新 Cookie 并启动
+                </button>
+            </form>
+        </div>
+
+        <!-- 日志记录区域 -->
+        <div class="bg-white rounded-lg shadow-lg p-6">
+            <h2 class="text-xl font-semibold text-gray-800 mb-4">运行日志</h2>
+            <div id="logContainer" class="bg-gray-50 p-4 rounded-lg h-48 overflow-y-auto font-mono text-sm">
+                <!-- 日志内容会通过JavaScript动态添加 -->
+            </div>
+        </div>
+    </div>
+
+    <script src="/script.js"></script>
+</body>
+</html>

@@ -1,0 +1,41 @@
+/* 自定义滚动条样式 */
+#logContainer::-webkit-scrollbar {
+    width: 8px;
+}
+
+#logContainer::-webkit-scrollbar-track {
+    background: #f1f1f1;
+    border-radius: 4px;
+}
+
+#logContainer::-webkit-scrollbar-thumb {
+    background: #888;
+    border-radius: 4px;
+}
+
+#logContainer::-webkit-scrollbar-thumb:hover {
+    background: #555;
+}
+
+/* 日志项样式 */
+.log-item {
+    padding: 4px 0;
+    border-bottom: 1px solid #eee;
+}
+
+.log-time {
+    color: #666;
+    margin-right: 8px;
+}
+
+.log-content {
+    color: #333;
+}
+
+.log-error {
+    color: #dc2626;
+}
+
+.log-success {
+    color: #059669;
+}
