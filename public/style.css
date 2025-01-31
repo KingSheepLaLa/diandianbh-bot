@@ -1,61 +1,85 @@
-/* 自定义滚动条样式 */
-#logContainer::-webkit-scrollbar {
-    width: 8px;
-}
-
-#logContainer::-webkit-scrollbar-track {
-    background: #f1f1f1;
-    border-radius: 4px;
-}
-
-#logContainer::-webkit-scrollbar-thumb {
-    background: #888;
-    border-radius: 4px;
-}
-
-#logContainer::-webkit-scrollbar-thumb:hover {
-    background: #555;
-}
-
-/* 日志条目样式 */
+/* 日志条目的基础样式 */
 .log-item {
-    padding: 4px 0;
-    border-bottom: 1px solid #eee;
+    /* 设置内边距，使内容不会贴边 */
+    padding: 4px 8px;
+    /* 圆角边框，让外观更现代 */
+    border-radius: 4px;
+    /* 浅灰色背景，区分不同的日志条目 */
+    background-color: #f8f9fa;
+    /* 使用弹性布局，让时间戳和内容能够并排显示 */
+    display: flex;
+    /* 在时间戳和内容之间添加间距 */
+    gap: 8px;
 }
 
-.log-time {
-    color: #666;
-    margin-right: 8px;
+/* 日志时间戳样式 */
+.log-item .log-time {
+    /* 时间戳使用灰色，让它不那么显眼 */
+    color: #6c757d;
+    /* 防止时间戳被压缩 */
+    flex-shrink: 0;
 }
 
-.log-content {
-    color: #333;
-}
-
+/* 错误日志样式 */
 .log-error {
-    color: #dc2626;
+    /* 浅红色背景，表示这是一条错误信息 */
+    background-color: #fff5f5;
+    /* 红色文字，增强警示效果 */
+    color: #c53030;
 }
 
+/* 成功日志样式 */
 .log-success {
-    color: #059669;
+    /* 浅绿色背景，表示这是一条成功信息 */
+    background-color: #f0fff4;
+    /* 绿色文字，给人积极的感觉 */
+    color: #2f855a;
 }
 
-/* 加载状态动画 */
+/* 加载动画容器 */
 .loading {
-    animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+    /* 设置为内联块级元素，可以和文字在同一行 */
+    display: inline-block;
+    /* 相对定位，作为动画元素的定位父级 */
+    position: relative;
+    /* 设置合适的尺寸 */
+    width: 20px;
+    height: 20px;
 }
 
-@keyframes pulse {
-    0%, 100% {
-        opacity: 1;
+/* 加载动画元素 */
+.loading::after {
+    /* 创建一个伪元素作为动画主体 */
+    content: " ";
+    display: block;
+    /* 圆形边框 */
+    border-radius: 50%;
+    width: 0;
+    height: 0;
+    /* 确保边框计算在元素尺寸内 */
+    box-sizing: border-box;
+    /* 设置边框样式，利用透明边框创建加载效果 */
+    border: 16px solid #fff;
+    border-color: #fff transparent #fff transparent;
+    /* 应用旋转动画 */
+    animation: loading 1.2s infinite;
+}
+
+/* 定义加载动画关键帧 */
+@keyframes loading {
+    0% {
+        /* 动画开始时的状态 */
+        transform: rotate(0);
+        /* 使用贝塞尔曲线使动画更自然 */
+        animation-timing-function: cubic-bezier(0.55, 0.055, 0.675, 0.19);
     }
     50% {
-        opacity: .5;
+        /* 动画中间状态 */
+        transform: rotate(900deg);
+        animation-timing-function: cubic-bezier(0.215, 0.61, 0.355, 1);
     }
-}
-
-/* 确保长文本能够正确换行 */
-input[type="text"], textarea {
-    word-break: break-all;
-    word-wrap: break-word;
+    100% {
+        /* 动画结束状态 */
+        transform: rotate(1800deg);
+    }
 }

@@ -3,131 +3,112 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>点点开黑 - 自动挂厅控制台</title>
-    <!-- 使用 Tailwind CSS 来构建美观的界面 -->
+    <title>图玩挂机控制面板</title>
+    <!-- 引入 Tailwind CSS 用于快速构建漂亮的界面 -->
     <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
-    <!-- 自定义样式 -->
-    <link rel="stylesheet" href="/style.css">
+    <!-- 引入自定义样式文件 -->
+    <link href="style.css" rel="stylesheet">
 </head>
-<body class="bg-gray-50 min-h-screen">
+<body class="bg-gray-100">
     <div class="container mx-auto px-4 py-8">
-        <!-- 顶部状态概览区域 -->
-        <div class="bg-white rounded-lg shadow-lg p-6 mb-8">
-            <div class="flex justify-between items-center mb-6">
-                <h1 class="text-2xl font-bold text-gray-800">点点开黑自动挂厅控制台</h1>
-                <div id="systemTime" class="text-sm text-gray-600"></div>
+        <h1 class="text-3xl font-bold mb-8 text-center text-gray-800">图玩挂机控制面板</h1>
+        
+        <!-- 状态显示区域：使用网格布局展示三个状态卡片 -->
+        <div class="grid md:grid-cols-3 gap-6 mb-8">
+            <!-- 账号状态卡片：显示用户信息和登录状态 -->
+            <div class="bg-white rounded-lg shadow p-6">
+                <h2 class="text-xl font-semibold mb-4 text-gray-700">账号状态</h2>
+                <div id="userInfo" class="space-y-2 text-gray-600">
+                    <p>状态: <span class="text-red-600 font-medium">未登录</span></p>
+                    <p>请配置Cookie和房间号</p>
+                </div>
             </div>
             
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <!-- 用户状态卡片 -->
-                <div class="bg-blue-50 p-4 rounded-lg">
-                    <h3 class="text-lg font-semibold text-blue-800 mb-3">账号状态</h3>
-                    <div id="userInfo" class="space-y-2">
-                        <p class="text-gray-600">等待配置...</p>
-                    </div>
+            <!-- 运行状态卡片：显示房间和心跳信息 -->
+            <div class="bg-white rounded-lg shadow p-6">
+                <h2 class="text-xl font-semibold mb-4 text-gray-700">运行状态</h2>
+                <div class="space-y-2 text-gray-600">
+                    <p>当前房间: <span id="currentRoom">未设置</span></p>
+                    <p>心跳状态: <span id="heartbeatStatus">-</span></p>
+                    <p>最后心跳: <span id="lastHeartbeat">-</span></p>
+                    <p>最后上报: <span id="lastReport">-</span></p>
                 </div>
-                
-                <!-- 运行状态卡片 -->
-                <div class="bg-green-50 p-4 rounded-lg">
-                    <h3 class="text-lg font-semibold text-green-800 mb-3">运行状态</h3>
-                    <div class="space-y-2">
-                        <p>当前房间: <span id="currentRoom" class="font-medium">-</span></p>
-                        <p>心跳状态: <span id="heartbeatStatus" class="font-medium">-</span></p>
-                        <p>最后心跳: <span id="lastHeartbeat" class="text-gray-600">-</span></p>
-                        <p>最后上报: <span id="lastReport" class="text-gray-600">-</span></p>
-                    </div>
-                </div>
-
-                <!-- 系统信息卡片 -->
-                <div class="bg-purple-50 p-4 rounded-lg">
-                    <h3 class="text-lg font-semibold text-purple-800 mb-3">系统信息</h3>
-                    <div class="space-y-2">
-                        <p>运行时长: <span id="runningTime" class="text-gray-600">-</span></p>
-                        <p>系统状态: <span id="systemStatus" class="text-green-600 font-medium">正常</span></p>
-                    </div>
+            </div>
+            
+            <!-- 系统信息卡片：显示运行时间和系统状态 -->
+            <div class="bg-white rounded-lg shadow p-6">
+                <h2 class="text-xl font-semibold mb-4 text-gray-700">系统信息</h2>
+                <div class="space-y-2 text-gray-600">
+                    <p>运行时长: <span id="runningTime">0小时0分钟</span></p>
+                    <p>系统状态: <span id="systemStatus" class="text-green-600 font-medium">正常</span></p>
+                    <p>系统时间: <span id="systemTime">-</span></p>
                 </div>
             </div>
         </div>
-
-        <!-- 配置区域 -->
-        <div class="bg-white rounded-lg shadow-lg p-6 mb-8">
-            <h2 class="text-xl font-semibold text-gray-800 mb-4">运行配置</h2>
-            <form id="configForm" class="space-y-4">
-                <!-- 房间号配置 -->
+        
+        <!-- 配置表单：用于输入房间号和Cookie -->
+        <div class="bg-white rounded-lg shadow p-6 mb-8">
+            <h2 class="text-xl font-semibold mb-4 text-gray-700">运行配置</h2>
+            <form id="configForm" class="space-y-6">
+                <!-- 房间号输入区域 -->
                 <div>
-                    <label class="block text-gray-700 text-sm font-bold mb-2" for="roomId">
-                        房间号
-                    </label>
-                    <div class="flex items-center space-x-2">
-                        <input
-                            type="text"
-                            id="roomId"
-                            name="roomId"
-                            class="flex-1 px-3 py-2 border rounded-lg focus:outline-none focus:border-blue-500 font-mono text-sm"
-                            placeholder="请输入房间号，例如：49499"
-                            required
-                            pattern="\d+"
-                        />
-                        <a 
-                            id="previewLink" 
-                            href="#" 
-                            target="_blank" 
-                            class="text-blue-600 hover:text-blue-800 text-sm opacity-50 pointer-events-none"
-                        >
-                            预览房间
-                        </a>
+                    <label for="roomId" class="block text-sm font-medium text-gray-700 mb-2">房间号</label>
+                    <div class="flex items-center space-x-4">
+                        <input type="text" id="roomId" name="roomId" 
+                               class="flex-1 rounded-md border border-gray-300 p-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                               placeholder="输入房间号">
+                        <a id="previewLink" href="#" target="_blank" 
+                           class="text-blue-600 hover:text-blue-800 opacity-50 pointer-events-none">预览房间</a>
                     </div>
                     <p class="mt-1 text-sm text-gray-500">从房间URL中获取，例如：https://y.tuwan.com/chatroom/49499 中的 49499</p>
                 </div>
-
-                <!-- Cookie配置 -->
+                
+                <!-- Cookie输入区域 -->
                 <div>
-                    <label class="block text-gray-700 text-sm font-bold mb-2" for="cookie">
-                        Cookie 值
-                    </label>
-                    <textarea
-                        class="w-full px-3 py-2 border rounded-lg focus:outline-none focus:border-blue-500 font-mono text-sm"
-                        id="cookie"
-                        name="cookie"
-                        rows="3"
-                        required
-                        placeholder="请粘贴从浏览器复制的Cookie值"></textarea>
+                    <label for="cookie" class="block text-sm font-medium text-gray-700 mb-2">Cookie 值</label>
+                    <textarea id="cookie" name="cookie" rows="3"
+                              class="w-full rounded-md border border-gray-300 p-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                              placeholder="粘贴Cookie值"></textarea>
+                    <!-- Cookie获取说明折叠面板 -->
+                    <div class="mt-2">
+                        <details class="text-sm text-gray-600">
+                            <summary class="cursor-pointer hover:text-blue-600">Cookie获取说明</summary>
+                            <ol class="mt-2 space-y-1 list-decimal list-inside">
+                                <li>使用浏览器访问并登录点点开黑网站</li>
+                                <li>前往想要挂机的房间页面</li>
+                                <li>从地址栏复制房间号</li>
+                                <li>按F12打开开发者工具（或右键点击 -> 检查）</li>
+                                <li>切换到"网络"(Network)标签</li>
+                                <li>筛选器中选择"XHR"</li>
+                                <li>刷新页面</li>
+                                <li>找到 getuserinfo 请求</li>
+                                <li>在请求头中找到并复制完整的 Cookie 值</li>
+                            </ol>
+                        </details>
+                    </div>
                 </div>
-
-                <!-- Cookie获取教程 -->
-                <div class="bg-blue-50 p-4 rounded-lg">
-                    <h3 class="text-sm font-semibold text-blue-800 mb-2">Cookie获取说明</h3>
-                    <ol class="text-sm text-blue-700 space-y-1 list-decimal list-inside">
-                        <li>使用浏览器访问并登录点点开黑网站</li>
-                        <li>前往想要挂机的房间页面</li>
-                        <li>从地址栏复制房间号</li>
-                        <li>按F12打开开发者工具（或右键点击 -> 检查）</li>
-                        <li>切换到"网络"(Network)标签</li>
-                        <li>筛选器中选择"XHR"</li>
-                        <li>刷新页面</li>
-                        <li>找到 getuserinfo 请求</li>
-                        <li>在请求头中找到并复制完整的 Cookie 值</li>
-                    </ol>
-                </div>
-
-                <!-- 配置提交按钮 -->
-                <button type="submit"
-                    class="w-full bg-blue-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-blue-700 transition duration-200">
+                
+                <!-- 提交按钮 -->
+                <button type="submit" 
+                        class="w-full bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2">
                     启动挂机
                 </button>
             </form>
         </div>
-
-        <!-- 运行日志区域 -->
-        <div class="bg-white rounded-lg shadow-lg p-6">
+        
+        <!-- 运行日志区域：显示系统运行状态日志 -->
+        <div class="bg-white rounded-lg shadow p-6">
             <div class="flex justify-between items-center mb-4">
-                <h2 class="text-xl font-semibold text-gray-800">运行日志</h2>
-                <button id="clearLogs" class="text-sm text-gray-500 hover:text-gray-700">清除日志</button>
+                <h2 class="text-xl font-semibold text-gray-700">运行日志</h2>
+                <button id="clearLogs" 
+                        class="text-sm text-gray-600 hover:text-gray-800 focus:outline-none">
+                    清除日志
+                </button>
             </div>
-            <div id="logContainer" class="bg-gray-50 p-4 rounded-lg h-48 overflow-y-auto font-mono text-sm"></div>
+            <div id="logContainer" class="space-y-2 text-sm text-gray-600 h-64 overflow-y-auto"></div>
         </div>
     </div>
-
-    <script src="/script.js"></script>
+    <!-- 引入JavaScript文件 -->
+    <script src="script.js"></script>
 </body>
 </html>
