@@ -1,30 +1,31 @@
-// api/index.js - 服务器端核心逻辑文件
+// api/index.js - 系统核心服务文件
 
-// 引入必需的 Node.js 模块
-const express = require('express');         // Web 应用框架
-const axios = require('axios');             // HTTP 请求客户端
-const path = require('path');               // 文件路径处理
+// 引入必需的Node.js模块
+const express = require('express');         // Web应用框架，用于创建服务器和处理HTTP请求
+const axios = require('axios');             // HTTP客户端，用于发送网络请求
+const path = require('path');               // 文件路径处理工具
 
-// 创建 Express 应用实例
+// 创建Express应用实例
 const app = express();
 
-// 配置中间件以处理不同类型的请求和响应
-app.use(express.json());                    // 处理 JSON 格式的请求体
-app.use(express.urlencoded({ extended: true })); // 处理 URL 编码的请求体
+// 配置中间件
+app.use(express.json());                    // 使服务器能够解析JSON格式的请求体
+app.use(express.urlencoded({ extended: true })); // 处理URL编码的表单数据
 app.use(express.static(path.join(__dirname, '../public'))); // 提供静态文件服务
 
-// 全局状态变量
-let currentCookie = '';           // 存储当前使用的登录凭证
-let currentRoomId = '';          // 存储当前挂机房间号
-let lastHeartbeatTime = null;     // 记录最后一次心跳时间
-let heartbeatStatus = false;      // 记录心跳状态
-let userData = null;              // 存储用户信息
-const startTime = new Date();     // 记录系统启动时间
+// 全局状态变量，用于存储运行时的重要信息
+let currentCookie = '';           // 当前用户的登录凭证
+let currentRoomId = '';          // 当前挂机的房间号
+let lastHeartbeatTime = null;     // 最后一次心跳成功的时间
+let heartbeatStatus = false;      // 当前心跳状态
+let userData = null;              // 用户信息缓存
+const startTime = new Date();     // 系统启动时间
 
-// 创建 axios 实例，配置通用的请求头和设置
+// 创建axios实例，配置通用的请求设置
 const api = axios.create({
-    timeout: 10000,  // 设置请求超时时间为 10 秒
+    timeout: 10000,  // 请求超时时间：10秒
     headers: {
+        // 设置浏览器标识，模拟真实的浏览器环境
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36 Edg/132.0.0.0',
         'Accept': '*/*',
         'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8,en-GB;q=0.7,en-US;q=0.6',
@@ -39,14 +40,14 @@ const api = axios.create({
 });
 
 /**
- * 获取用户信息并验证登录状态
- * @param {string} cookie - 用户的Cookie字符串
- * @returns {Promise<Object>} 包含用户信息和验证状态的对象
+ * 获取登录token
+ * 这是一个辅助函数，用于获取用户的认证token
+ * @param {string} cookie - 用户的Cookie
+ * @returns {Promise<Object>} 包含token信息的对象
  */
-async function getUserInfo(cookie) {
+async function getLoginToken(cookie) {
     try {
-        // 首先获取登录令牌
-        const loginTokenResponse = await api.get('https://u.tuwan.com/Netease/login', {
+        const response = await api.get('https://u.tuwan.com/Netease/login', {
             params: {
                 callback: `jQuery${Math.random().toString().slice(2)}_${Date.now()}`,
                 _: Date.now()
@@ -58,29 +59,47 @@ async function getUserInfo(cookie) {
             }
         });
 
-        // 解析登录令牌响应
-        const tokenMatch = loginTokenResponse.data.match(/\((.*?)\)/);
-        if (!tokenMatch || loginTokenResponse.data.includes('请先登录')) {
-            console.log('登录令牌获取失败:', loginTokenResponse.data);
+        const match = response.data.match(/\((.*?)\)/);
+        if (match) {
+            const data = JSON.parse(match[1]);
+            if (data.error === 0) {
+                return {
+                    success: true,
+                    token: data.token,
+                    accid: data.accid
+                };
+            }
+        }
+
+        return { success: false };
+    } catch (error) {
+        console.error('获取token失败:', error);
+        return { success: false };
+    }
+}
+
+/**
+ * 获取并验证用户信息
+ * 此函数执行完整的用户验证流程
+ * @param {string} cookie - 用户的Cookie字符串
+ * @returns {Promise<Object>} 包含用户信息和验证状态的对象
+ */
+async function getUserInfo(cookie) {
+    try {
+        // 第一步：获取登录token
+        const tokenResult = await getLoginToken(cookie);
+        if (!tokenResult.success) {
             return {
                 success: false,
-                message: '登录验证失败'
+                message: '登录token获取失败'
             };
         }
 
-        const tokenData = JSON.parse(tokenMatch[1]);
-        if (tokenData.error !== 0) {
-            return {
-                success: false,
-                message: '登录令牌无效'
-            };
-        }
-
-        // 获取用户详细信息
+        // 第二步：获取用户详细信息
         const userInfoResponse = await api.get('https://papi.tuwan.com/Chatroom/getuserinfo', {
             params: {
                 requestfrom: 'selflogin',
-                uids: tokenData.accid,
+                uids: tokenResult.accid,
                 callback: `jQuery${Math.random().toString().slice(2)}_${Date.now()}`,
                 _: Date.now()
             },
@@ -101,7 +120,8 @@ async function getUserInfo(cookie) {
                     success: true,
                     data: {
                         ...userData.data[0],
-                        accid: tokenData.accid,
+                        accid: tokenResult.accid,
+                        token: tokenResult.token,
                         isLoggedIn: true,
                         lastUpdate: new Date().toISOString()
                     }
@@ -111,10 +131,10 @@ async function getUserInfo(cookie) {
 
         return {
             success: false,
-            message: '用户信息解析失败'
+            message: '用户信息获取失败'
         };
     } catch (error) {
-        console.error('获取用户信息失败:', error.message);
+        console.error('验证过程出错:', error);
         return {
             success: false,
             message: `验证失败: ${error.message}`
@@ -123,7 +143,8 @@ async function getUserInfo(cookie) {
 }
 
 /**
- * 执行心跳检测以保持用户在线状态
+ * 执行心跳检测
+ * 通过定期发送请求来维持用户在房间中的在线状态
  * @returns {Promise<boolean>} 心跳是否成功
  */
 async function heartbeat() {
@@ -134,6 +155,15 @@ async function heartbeat() {
     }
 
     try {
+        // 首先获取最新的token
+        const tokenResult = await getLoginToken(currentCookie);
+        if (!tokenResult.success) {
+            console.log('心跳前token获取失败');
+            heartbeatStatus = false;
+            return false;
+        }
+
+        // 发送心跳请求
         const response = await api.get('https://activity.tuwan.com/Activitymanagement/activity', {
             params: {
                 cid: currentRoomId,
@@ -144,22 +174,23 @@ async function heartbeat() {
             headers: {
                 'Cookie': currentCookie,
                 'Referer': `https://y.tuwan.com/chatroom/${currentRoomId}`,
-                'Host': 'activity.tuwan.com'
+                'Host': 'activity.tuwan.com',
+                'Origin': 'https://y.tuwan.com'
             }
         });
 
-        // 检查响应中是否包含登录失效标识
+        // 检查响应是否包含错误信息
         if (response.data.includes('请先登录')) {
             console.log('心跳检测发现登录状态已失效');
             heartbeatStatus = false;
             return false;
         }
 
-        // 解析响应数据
+        // 尝试解析响应数据
         const match = response.data.match(/\((.*?)\)/);
         if (match) {
             const data = JSON.parse(match[1]);
-            if (data.status === 1) {
+            if (data.status === 1 || data.error === 0) {
                 lastHeartbeatTime = new Date();
                 heartbeatStatus = true;
                 console.log('心跳检测成功:', lastHeartbeatTime.toISOString(), '房间号:', currentRoomId);
@@ -177,7 +208,7 @@ async function heartbeat() {
     }
 }
 
-// API路由：更新配置
+// API路由：更新运行配置
 app.post('/api/update-config', async (req, res) => {
     const { roomId, cookie } = req.body;
     
@@ -189,31 +220,16 @@ app.post('/api/update-config', async (req, res) => {
     }
 
     try {
-        // 先验证用户信息
+        // 验证用户信息
         const userInfoResult = await getUserInfo(cookie);
         
         if (userInfoResult.success) {
-            // 验证房间访问权限
-            const roomCheckResponse = await api.get(`https://activity.tuwan.com/Activitymanagement/activity`, {
-                params: {
-                    cid: roomId,
-                    from: '1',
-                    callback: `jQuery${Math.random().toString().slice(2)}_${Date.now()}`,
-                    _: Date.now()
-                },
-                headers: {
-                    'Cookie': cookie,
-                    'Referer': `https://y.tuwan.com/chatroom/${roomId}`,
-                    'Host': 'activity.tuwan.com'
-                }
-            });
-
             // 更新全局配置
             currentCookie = cookie;
             currentRoomId = roomId;
             userData = userInfoResult.data;
             
-            // 立即执行心跳检测
+            // 立即执行一次心跳检测
             const heartbeatResult = await heartbeat();
             
             res.json({
@@ -296,10 +312,10 @@ app.get('/health', (req, res) => {
     });
 });
 
-// 设置定时任务
-setInterval(heartbeat, 5 * 60 * 1000);  // 每5分钟执行一次心跳检测
+// 设置定时任务：心跳检测（每5分钟执行一次）
+setInterval(heartbeat, 5 * 60 * 1000);
 
-// 设置定期检查登录状态
+// 设置定时任务：登录状态检查（每15分钟执行一次）
 setInterval(async () => {
     if (currentCookie) {
         const checkResult = await getUserInfo(currentCookie);
@@ -310,7 +326,7 @@ setInterval(async () => {
             heartbeatStatus = false;
         }
     }
-}, 15 * 60 * 1000);  // 每15分钟检查一次登录状态
+}, 15 * 60 * 1000);
 
 // 启动服务器
 const PORT = process.env.PORT || 3000;
@@ -328,4 +344,5 @@ app.listen(PORT, () => {
     }
 });
 
+// 导出app实例供Vercel使用
 module.exports = app;
