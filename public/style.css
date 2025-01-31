@@ -53,3 +53,9 @@
         opacity: .5;
     }
 }
+
+/* 输入框内容溢出处理 */
+input[type="text"], textarea {
+    word-break: break-all;
+    word-wrap: break-word;
+}

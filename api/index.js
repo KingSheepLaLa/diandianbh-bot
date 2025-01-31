@@ -1,4 +1,4 @@
-// api/index.js
+// api/index.js - 服务器端核心逻辑文件
 
 // 引入必需的 Node.js 模块
 const express = require('express');         // Web 应用框架
@@ -15,6 +15,7 @@ app.use(express.static(path.join(__dirname, '../public'))); // 提供静态文�
 
 // 全局状态变量
 let currentCookie = '';           // 存储当前使用的登录凭证
+let currentRoomId = '';          // 存储当前挂机房间号
 let lastHeartbeatTime = null;     // 记录最后一次心跳时间
 let heartbeatStatus = false;      // 记录心跳状态
 let userData = null;              // 存储用户信息
@@ -38,41 +39,48 @@ const api = axios.create({
 });
 
 /**
- * 验证用户登录状态并获取用户信息
- * 这个函数使用多重验证来确保用户已正确登录
- * @param {string} cookie - 用户的 Cookie 字符串
+ * 获取用户信息并验证登录状态
+ * @param {string} cookie - 用户的Cookie字符串
  * @returns {Promise<Object>} 包含用户信息和验证状态的对象
  */
 async function getUserInfo(cookie) {
     try {
-        // 第一步：验证房间访问权限
-        const roomCheckResponse = await api.get('https://activity.tuwan.com/Activitymanagement/activity', {
+        // 首先获取登录令牌
+        const loginTokenResponse = await api.get('https://u.tuwan.com/Netease/login', {
             params: {
-                cid: '25293',
-                from: '1',
                 callback: `jQuery${Math.random().toString().slice(2)}_${Date.now()}`,
                 _: Date.now()
             },
             headers: {
                 'Cookie': cookie,
                 'Referer': 'https://y.tuwan.com/',
-                'Host': 'activity.tuwan.com'
+                'Host': 'u.tuwan.com'
             }
         });
 
-        // 检查房间访问响应
-        const roomMatch = roomCheckResponse.data.match(/\((.*?)\)/);
-        if (!roomMatch || roomCheckResponse.data.includes('请先登录')) {
-            console.log('房间验证失败:', roomCheckResponse.data);
+        // 解析登录令牌响应
+        const tokenMatch = loginTokenResponse.data.match(/\((.*?)\)/);
+        if (!tokenMatch || loginTokenResponse.data.includes('请先登录')) {
+            console.log('登录令牌获取失败:', loginTokenResponse.data);
             return {
                 success: false,
-                message: '房间访问验证失败'
+                message: '登录验证失败'
             };
         }
 
-        // 第二步：获取用户详细信息
+        const tokenData = JSON.parse(tokenMatch[1]);
+        if (tokenData.error !== 0) {
+            return {
+                success: false,
+                message: '登录令牌无效'
+            };
+        }
+
+        // 获取用户详细信息
         const userInfoResponse = await api.get('https://papi.tuwan.com/Chatroom/getuserinfo', {
             params: {
+                requestfrom: 'selflogin',
+                uids: tokenData.accid,
                 callback: `jQuery${Math.random().toString().slice(2)}_${Date.now()}`,
                 _: Date.now()
             },
@@ -86,16 +94,19 @@ async function getUserInfo(cookie) {
         // 解析用户信息响应
         const userMatch = userInfoResponse.data.match(/\((.*?)\)/);
         if (userMatch) {
-            const data = JSON.parse(userMatch[1]);
-            console.log('用户信息获取成功:', data);
-            return {
-                success: true,
-                data: {
-                    ...data,
-                    isLoggedIn: true,
-                    lastUpdate: new Date().toISOString()
-                }
-            };
+            const userData = JSON.parse(userMatch[1]);
+            if (userData.error === 0 && userData.data && userData.data.length > 0) {
+                console.log('用户信息获取成功:', userData.data[0]);
+                return {
+                    success: true,
+                    data: {
+                        ...userData.data[0],
+                        accid: tokenData.accid,
+                        isLoggedIn: true,
+                        lastUpdate: new Date().toISOString()
+                    }
+                };
+            }
         }
 
         return {
@@ -103,8 +114,7 @@ async function getUserInfo(cookie) {
             message: '用户信息解析失败'
         };
     } catch (error) {
-        console.error('验证过程出错:', error);
-        console.error('错误详情:', error.response?.data);
+        console.error('获取用户信息失败:', error.message);
         return {
             success: false,
             message: `验证失败: ${error.message}`
@@ -114,28 +124,26 @@ async function getUserInfo(cookie) {
 
 /**
  * 执行心跳检测以保持用户在线状态
- * 这个功能定期向服务器发送请求，模拟用户活动
  * @returns {Promise<boolean>} 心跳是否成功
  */
 async function heartbeat() {
-    if (!currentCookie) {
-        console.log('未设置Cookie，跳过心跳检测');
+    if (!currentCookie || !currentRoomId) {
+        console.log('未设置Cookie或房间号，跳过心跳检测');
         heartbeatStatus = false;
         return false;
     }
 
     try {
-        const timestamp = Date.now();
         const response = await api.get('https://activity.tuwan.com/Activitymanagement/activity', {
             params: {
-                cid: '25293',
+                cid: currentRoomId,
                 from: '1',
-                callback: `jQuery${Math.random().toString().slice(2)}_${timestamp}`,
-                _: timestamp
+                callback: `jQuery${Math.random().toString().slice(2)}_${Date.now()}`,
+                _: Date.now()
             },
             headers: {
                 'Cookie': currentCookie,
-                'Referer': 'https://y.tuwan.com/',
+                'Referer': `https://y.tuwan.com/chatroom/${currentRoomId}`,
                 'Host': 'activity.tuwan.com'
             }
         });
@@ -154,7 +162,7 @@ async function heartbeat() {
             if (data.status === 1) {
                 lastHeartbeatTime = new Date();
                 heartbeatStatus = true;
-                console.log('心跳检测成功:', lastHeartbeatTime.toISOString());
+                console.log('心跳检测成功:', lastHeartbeatTime.toISOString(), '房间号:', currentRoomId);
                 return true;
             }
         }
@@ -169,40 +177,58 @@ async function heartbeat() {
     }
 }
 
-// API路由：更新Cookie
-app.post('/api/update-cookie', async (req, res) => {
-    const { cookie } = req.body;
+// API路由：更新配置
+app.post('/api/update-config', async (req, res) => {
+    const { roomId, cookie } = req.body;
     
-    if (!cookie) {
+    if (!roomId || !cookie) {
         return res.status(400).json({
             success: false,
-            message: '请提供Cookie'
+            message: '请提供房间号和Cookie'
         });
     }
 
     try {
-        // 验证Cookie并获取用户信息
+        // 先验证用户信息
         const userInfoResult = await getUserInfo(cookie);
         
         if (userInfoResult.success) {
+            // 验证房间访问权限
+            const roomCheckResponse = await api.get(`https://activity.tuwan.com/Activitymanagement/activity`, {
+                params: {
+                    cid: roomId,
+                    from: '1',
+                    callback: `jQuery${Math.random().toString().slice(2)}_${Date.now()}`,
+                    _: Date.now()
+                },
+                headers: {
+                    'Cookie': cookie,
+                    'Referer': `https://y.tuwan.com/chatroom/${roomId}`,
+                    'Host': 'activity.tuwan.com'
+                }
+            });
+
+            // 更新全局配置
             currentCookie = cookie;
+            currentRoomId = roomId;
             userData = userInfoResult.data;
             
-            // Cookie验证成功后立即执行一次心跳检测
+            // 立即执行心跳检测
             const heartbeatResult = await heartbeat();
             
             res.json({
                 success: true,
-                message: '登录成功',
+                message: '配置成功',
                 data: {
                     ...userInfoResult.data,
-                    heartbeatStatus: heartbeatResult
+                    heartbeatStatus: heartbeatResult,
+                    roomId: roomId
                 }
             });
         } else {
             res.json({
                 success: false,
-                message: 'Cookie验证失败: ' + userInfoResult.message
+                message: '验证失败: ' + userInfoResult.message
             });
         }
     } catch (error) {
@@ -214,31 +240,31 @@ app.post('/api/update-cookie', async (req, res) => {
     }
 });
 
-// API路由：获取当前系统状态
+// API路由：获取当前状态
 app.get('/api/status', async (req, res) => {
     try {
         let loginStatus = false;
         let userDetails = null;
 
-        // 如果存在Cookie，验证其有效性
         if (currentCookie) {
             const checkResult = await getUserInfo(currentCookie);
             if (checkResult.success) {
                 loginStatus = true;
                 userDetails = checkResult.data;
             } else {
-                // 验证失败时清除Cookie
+                // 验证失败时清除配置
                 currentCookie = '';
+                currentRoomId = '';
                 heartbeatStatus = false;
             }
         }
 
-        // 返回完整的系统状态信息
         res.json({
             isLoggedIn: loginStatus,
             lastHeartbeat: lastHeartbeatTime,
             heartbeatStatus: heartbeatStatus,
             userData: userDetails,
+            roomId: currentRoomId,
             systemStatus: {
                 startTime: startTime,
                 uptime: Date.now() - startTime,
@@ -265,7 +291,8 @@ app.get('/health', (req, res) => {
     res.json({ 
         status: 'ok',
         timestamp: new Date().toISOString(),
-        uptime: Date.now() - startTime
+        uptime: Date.now() - startTime,
+        roomId: currentRoomId
     });
 });
 
@@ -279,6 +306,7 @@ setInterval(async () => {
         if (!checkResult.success) {
             console.log('定期检查发现登录状态已失效');
             currentCookie = '';
+            currentRoomId = '';
             heartbeatStatus = false;
         }
     }
@@ -289,8 +317,8 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
     console.log(`服务器启动成功，运行在端口 ${PORT}`);
     
-    // 如果存在Cookie，立即验证并开始心跳
-    if (currentCookie) {
+    // 如果存在配置，立即验证并开始心跳
+    if (currentCookie && currentRoomId) {
         getUserInfo(currentCookie).then(result => {
             if (result.success) {
                 userData = result.data;
@@ -300,5 +328,4 @@ app.listen(PORT, () => {
     }
 });
 
-// 导出app实例供Vercel使用
 module.exports = app;

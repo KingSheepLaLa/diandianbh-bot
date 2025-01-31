@@ -9,7 +9,7 @@
 </head>
 <body class="bg-gray-50 min-h-screen">
     <div class="container mx-auto px-4 py-8">
-        <!-- 顶部卡片：状态概览 -->
+        <!-- 顶部状态概览区域 -->
         <div class="bg-white rounded-lg shadow-lg p-6 mb-8">
             <div class="flex justify-between items-center mb-6">
                 <h1 class="text-2xl font-bold text-gray-800">点点开黑自动挂厅控制台</h1>
@@ -21,14 +21,15 @@
                 <div class="bg-blue-50 p-4 rounded-lg">
                     <h3 class="text-lg font-semibold text-blue-800 mb-3">账号状态</h3>
                     <div id="userInfo" class="space-y-2">
-                        <p class="text-gray-600">加载中...</p>
+                        <p class="text-gray-600">等待配置...</p>
                     </div>
                 </div>
                 
-                <!-- 运行状态卡片 -->
+                <!-- 挂机状态卡片 -->
                 <div class="bg-green-50 p-4 rounded-lg">
-                    <h3 class="text-lg font-semibold text-green-800 mb-3">运行状态</h3>
+                    <h3 class="text-lg font-semibold text-green-800 mb-3">挂机状态</h3>
                     <div class="space-y-2">
+                        <p>当前房间: <span id="currentRoom" class="font-medium">-</span></p>
                         <p>心跳状态: <span id="heartbeatStatus" class="font-medium">-</span></p>
                         <p>最后心跳: <span id="lastHeartbeat" class="text-gray-600">-</span></p>
                     </div>
@@ -45,10 +46,38 @@
             </div>
         </div>
 
-        <!-- Cookie配置区域 -->
+        <!-- 配置区域 -->
         <div class="bg-white rounded-lg shadow-lg p-6 mb-8">
-            <h2 class="text-xl font-semibold text-gray-800 mb-4">Cookie 配置</h2>
-            <form id="cookieForm" class="space-y-4">
+            <h2 class="text-xl font-semibold text-gray-800 mb-4">运行配置</h2>
+            <form id="configForm" class="space-y-4">
+                <!-- 房间号配置 -->
+                <div>
+                    <label class="block text-gray-700 text-sm font-bold mb-2" for="roomId">
+                        房间号
+                    </label>
+                    <div class="flex items-center space-x-2">
+                        <input
+                            type="text"
+                            id="roomId"
+                            name="roomId"
+                            class="flex-1 px-3 py-2 border rounded-lg focus:outline-none focus:border-blue-500 font-mono text-sm"
+                            placeholder="请输入房间号，例如：49499"
+                            required
+                            pattern="\d+"
+                        />
+                        <a 
+                            id="previewLink" 
+                            href="#" 
+                            target="_blank" 
+                            class="text-blue-600 hover:text-blue-800 text-sm opacity-50 pointer-events-none"
+                        >
+                            预览房间
+                        </a>
+                    </div>
+                    <p class="mt-1 text-sm text-gray-500">从房间URL中获取，例如：https://y.tuwan.com/chatroom/49499?r=20201125 中的 49499</p>
+                </div>
+
+                <!-- Cookie配置 -->
                 <div>
                     <label class="block text-gray-700 text-sm font-bold mb-2" for="cookie">
                         Cookie 值
@@ -62,28 +91,29 @@
                         placeholder="请粘贴从浏览器复制的Cookie值"></textarea>
                 </div>
 
-                <!-- Cookie获取教程 -->
+                <!-- 配置说明 -->
                 <div class="bg-blue-50 p-4 rounded-lg">
-                    <h3 class="text-sm font-semibold text-blue-800 mb-2">如何获取Cookie？</h3>
+                    <h3 class="text-sm font-semibold text-blue-800 mb-2">配置说明</h3>
                     <ol class="text-sm text-blue-700 space-y-1 list-decimal list-inside">
-                        <li>使用浏览器访问并登录点点开黑网站</li>
+                        <li>访问想要挂机的点点开黑房间页面</li>
+                        <li>从地址栏复制房间号填入上方输入框</li>
                         <li>按F12打开开发者工具（或右键点击 -> 检查）</li>
                         <li>切换到"网络"(Network)标签</li>
                         <li>筛选器中选择"Fetch/XHR"</li>
                         <li>刷新页面</li>
-                        <li>点击任意请求，在右侧找到"请求标头"</li>
-                        <li>找到并复制 Cookie 行的完整内容</li>
+                        <li>找到 getuserinfo 请求</li>
+                        <li>在请求头中复制 Cookie 值</li>
                     </ol>
                 </div>
 
                 <button type="submit"
                     class="w-full bg-blue-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-blue-700 transition duration-200">
-                    更新 Cookie 并启动
+                    启动挂机
                 </button>
             </form>
         </div>
 
-        <!-- 日志记录区域 -->
+        <!-- 运行日志区域 -->
         <div class="bg-white rounded-lg shadow-lg p-6">
             <div class="flex justify-between items-center mb-4">
                 <h2 class="text-xl font-semibold text-gray-800">运行日志</h2>
