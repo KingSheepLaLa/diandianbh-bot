@@ -1,17 +1,8 @@
 {
-  "name": "diandianbh-bot",
+  "name": "diandianbh",
   "version": "1.0.0",
-  "description": "点点开黑自动挂厅控制系统",
-  "main": "api/index.js",
-  "scripts": {
-    "start": "node api/index.js",
-    "dev": "nodemon api/index.js"
-  },
   "dependencies": {
-    "axios": "^1.6.7",
     "express": "^4.18.2",
-    "http-proxy-agent": "^7.0.0",
-    "https-proxy-agent": "^7.0.2",
-    "tough-cookie": "^4.1.3"
+    "axios": "^1.6.5"
   }
 }

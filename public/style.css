@@ -1,68 +1,64 @@
-/* 滚动条样式定制 
-   为了提供更好的视觉体验，我们自定义了滚动条的外观，使其与整体界面风格保持一致 */
-   #logContainer::-webkit-scrollbar {
-    width: 8px;  /* 设置滚动条宽度适中，既不会太窄难以操作，也不会太宽占用空间 */
+/* 滚动条样式 */
+#logContainer::-webkit-scrollbar {
+    width: 8px;
 }
 
 #logContainer::-webkit-scrollbar-track {
-    background: #f1f1f1;  /* 使用浅灰色轨道背景，提供柔和的视觉效果 */
-    border-radius: 4px;   /* 圆角设计，与整体界面风格统一 */
+    background: #f1f1f1;
+    border-radius: 4px;
 }
 
 #logContainer::-webkit-scrollbar-thumb {
-    background: #888;     /* 滚动条滑块使用中性灰色，既不会太突兀也容易分辨 */
-    border-radius: 4px;   /* 保持与轨道相同的圆角 */
-    transition: background-color 0.2s;  /* 添加颜色过渡效果 */
+    background: #888;
+    border-radius: 4px;
 }
 
 #logContainer::-webkit-scrollbar-thumb:hover {
-    background: #555;     /* 鼠标悬停时加深颜色，提供交互反馈 */
+    background: #555;
 }
 
-/* 日志条目样式设计
-   为不同类型的日志提供清晰的视觉区分，帮助用户快速识别重要信息 */
+/* 日志条目样式 */
 .log-item {
-    padding: 4px 8px;     /* 适当的内边距确保内容不会太过拥挤 */
-    border-bottom: 1px solid #eee;  /* 细线分隔，提高可读性 */
-    display: flex;        /* 使用弹性布局，更好地控制日志时间和内容的布局 */
-    align-items: baseline;  /* 对齐方式确保文本基线对齐 */
-    transition: background-color 0.2s;  /* 添加背景色过渡效果 */
+    padding: 4px 8px;
+    border-bottom: 1px solid #eee;
+    display: flex;
+    align-items: baseline;
+    transition: background-color 0.2s;
 }
 
 .log-item:hover {
-    background-color: #f8f8f8;  /* 鼠标悬停效果，便于定位特定日志 */
+    background-color: #f8f8f8;
 }
 
 .log-time {
-    color: #666;         /* 时间戳使用较浅的颜色，不与主要内容竞争注意力 */
-    margin-right: 8px;   /* 与日志内容保持适当间距 */
-    font-size: 0.9em;    /* 稍小的字号使时间戳更加低调 */
-    flex-shrink: 0;      /* 防止时间戳被挤压 */
-    min-width: 70px;     /* 确保时间戳有固定宽度，保持对齐 */
+    color: #666;
+    margin-right: 8px;
+    font-size: 0.9em;
+    flex-shrink: 0;
+    min-width: 70px;
 }
 
 .log-content {
-    color: #333;         /* 主要内容使用深色，提供良好的可读性 */
-    flex-grow: 1;        /* 允许内容区域自适应宽度 */
-    word-break: break-word;  /* 确保长文本正确换行 */
+    color: #333;
+    flex-grow: 1;
+    word-break: break-word;
 }
 
-/* 不同类型日志的颜色区分 */
+/* 不同类型日志的颜色 */
 .log-error {
-    color: #dc2626;      /* 错误信息使用醒目的红色 */
-    font-weight: 500;    /* 稍微加粗以引起注意 */
+    color: #dc2626;
+    font-weight: 500;
 }
 
 .log-success {
-    color: #059669;      /* 成功信息使用令人愉悦的绿色 */
+    color: #059669;
 }
 
 .log-warning {
-    color: #d97706;      /* 警告信息使用警示性的橙色 */
+    color: #d97706;
 }
 
-/* 加载状态动画
-   使用脉冲动画提供视觉反馈，表示系统正在工作 */
+/* 加载状态动画 */
 .loading {
     position: relative;
     animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
@@ -78,49 +74,44 @@
     }
 }
 
-/* 确保长文本在输入框中正确显示
-   防止文本溢出并保持良好的可读性 */
-input[type="text"], textarea {
+/* 长文本处理 */
+input[type="text"], 
+textarea {
     word-break: break-all;
     word-wrap: break-word;
-    font-family: monospace;  /* 使用等宽字体，便于阅读Cookie等技术内容 */
-    line-height: 1.5;        /* 适当的行高提升可读性 */
+    font-family: monospace;
+    line-height: 1.5;
 }
 
-/* 错误提示模态框样式
-   确保错误信息醒目但不过分干扰 */
+/* 错误提示模态框 */
 .error-modal {
-    backdrop-filter: blur(4px);  /* 背景模糊效果提升层次感 */
-    transition: opacity 0.3s;    /* 平滑的显示/隐藏过渡 */
+    backdrop-filter: blur(4px);
+    transition: opacity 0.3s;
 }
 
-/* 按钮状态样式
-   为不同状态的按钮提供清晰的视觉反馈 */
+/* 按钮状态 */
 button:disabled {
     opacity: 0.7;
     cursor: not-allowed;
 }
 
-/* 确保页面主容器在小屏幕设备上也能正常显示 */
+/* 移动设备适配 */
 @media (max-width: 640px) {
     .container {
         padding: 1rem;
     }
     
-    /* 调整日志容器在移动设备上的显示 */
     #logContainer {
-        height: 120px;  /* 在小屏幕上减小日志区域高度 */
+        height: 120px;
     }
     
-    /* 优化移动设备上的按钮布局 */
     .button-group {
         flex-direction: column;
         gap: 0.5rem;
     }
 }
 
-/* 提供暗色主题支持
-   响应系统的暗色模式设置 */
+/* 暗色主题支持 */
 @media (prefers-color-scheme: dark) {
     .log-item {
         border-bottom-color: #333;
