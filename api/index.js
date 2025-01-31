@@ -2,19 +2,222 @@ const axios = require('axios');
 const querystring = require('querystring');
 
 const api = axios.create({
-    timeout: 10000,
+    timeout: process.env.API_TIMEOUT || 15000,
     headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36',
         'Accept': '*/*',
         'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
         'Accept-Encoding': 'gzip, deflate, br',
-        'sec-ch-ua': '"Not A(Brand";v="8", "Chromium";v="132"',
-        'sec-ch-ua-mobile': '?0',
-        'sec-ch-ua-platform': '"Windows"'
+        'X-Requested-With': 'XMLHttpRequest',
+        'Sec-Fetch-Site': 'same-origin',
+        'Sec-Fetch-Mode': 'cors'
     }
 });
 
 const globalState = new Map();
+
+function generateRandomIP() {
+    return `117.136.${Math.floor(Math.random()*255)}.${Math.floor(Math.random()*255)}`;
+}
+
+function generateFakeUserIDs() {
+    return Array.from({length: 20}, () => Math.floor(1000000 + Math.random()*9000000)).join(',');
+}
+
+async function verifyUserIdentity(cookie, roomId) {
+    try {
+        const response = await api.get('https://papi.tuwan.com/Chatroom/getuserinfo', {
+            params: {
+                requestfrom: 'sms',
+                uids: 'tuwan_yuwan',
+                callback: `jQuery${Math.random().toString().slice(2)}_${Date.now()}`,
+                _: Date.now()
+            },
+            headers: {
+                'Cookie': cookie,
+                'Referer': `https://y.tuwan.com/chatroom/${roomId}`,
+                'X-Requested-With': 'XMLHttpRequest'
+            }
+        });
+        return response.data;
+    } catch (error) {
+        console.error('验证用户身份失败:', error);
+        return null;
+    }
+}
+
+async function updateMemberList(roomId, cookie, accid) {
+    try {
+        const userIds = `${accid},${generateFakeUserIDs()}`;
+        await api.get('https://papi.tuwan.com/Chatroom/getuserinfo', {
+            params: {
+                requestfrom: 'addChannelUsers',
+                uids: userIds,
+                callback: `jQuery${Math.random().toString().slice(2)}_${Date.now()}`,
+                _: Date.now()
+            },
+            headers: {
+                'Cookie': cookie,
+                'Origin': 'https://y.tuwan.com',
+                'Referer': `https://y.tuwan.com/chatroom/${roomId}`,
+                'Sec-Fetch-Dest': 'script'
+            }
+        });
+        return true;
+    } catch (error) {
+        console.error('更新成员列表失败:', error);
+        return false;
+    }
+}
+
+async function triggerSystemBroadcast(roomId, cookie) {
+    try {
+        await api.post('https://app-diandian-report.tuwan.com/', 
+            querystring.stringify({
+                roomId: roomId,
+                status: 'online',
+                timestamp: Date.now(),
+                actionType: 'enter',
+                deviceId: 'WEB_' + Math.random().toString(36).substr(2, 9)
+            }),
+            {
+                headers: {
+                    'Cookie': cookie,
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                    'Origin': 'https://y.tuwan.com',
+                    'Referer': `https://y.tuwan.com/chatroom/${roomId}`,
+                    'X-Forwarded-For': generateRandomIP()
+                }
+            }
+        );
+        return true;
+    } catch (error) {
+        console.error('触发系统广播失败:', error);
+        return false;
+    }
+}
+
+async function sendActivityHeartbeat(roomId, cookie) {
+    try {
+        const params = {
+            cid: roomId,
+            from: '1',
+            callback: `jQuery${Math.random().toString().slice(2)}_${Date.now()}`,
+            _: Date.now(),
+            r: Math.random().toString(36).substr(2, 5)
+        };
+
+        const response = await api.get('https://activity.tuwan.com/Activitymanagement/activity', {
+            params: params,
+            headers: {
+                'Cookie': cookie,
+                'Referer': `https://y.tuwan.com/chatroom/${roomId}`,
+                'X-Forwarded-For': generateRandomIP()
+            }
+        });
+        return !response.data.includes('请先登录');
+    } catch (error) {
+        console.error('心跳发送失败:', error);
+        return false;
+    }
+}
+
+async function getNeteaseToken(cookie) {
+    try {
+        const response = await api.get('https://u.tuwan.com/Netease/login', {
+            params: {
+                callback: `jQuery${Math.random().toString().slice(2)}_${Date.now()}`,
+                _: Date.now()
+            },
+            headers: {
+                'Cookie': cookie,
+                'Referer': 'https://y.tuwan.com/'
+            }
+        });
+
+        const match = response.data.match(/\((.*?)\)/);
+        if (match) {
+            const data = JSON.parse(match[1]);
+            if (data.error === 0) {
+                return { success: true, ...data };
+            }
+        }
+        return { success: false };
+    } catch (error) {
+        console.error('获取Netease token失败:', error);
+        return { success: false };
+    }
+}
+
+async function getUserInfo(cookie) {
+    try {
+        const tokenResult = await getNeteaseToken(cookie);
+        if (!tokenResult.success) {
+            return { success: false };
+        }
+
+        const response = await api.get('https://papi.tuwan.com/Chatroom/getuserinfo', {
+            params: {
+                requestfrom: 'selflogin',
+                uids: tokenResult.accid,
+                callback: `jQuery${Math.random().toString().slice(2)}_${Date.now()}`,
+                _: Date.now()
+            },
+            headers: {
+                'Cookie': cookie,
+                'Referer': 'https://y.tuwan.com/'
+            }
+        });
+
+        const match = response.data.match(/\((.*?)\)/);
+        if (match) {
+            const userData = JSON.parse(match[1]);
+            if (userData.error === 0 && userData.data && userData.data.length > 0) {
+                return {
+                    success: true,
+                    data: {
+                        ...userData.data[0],
+                        accid: tokenResult.accid,
+                        token: tokenResult.token,
+                        isLoggedIn: true,
+                        lastUpdate: new Date().toISOString()
+                    }
+                };
+            }
+        }
+        return { success: false };
+    } catch (error) {
+        console.error('获取用户信息失败:', error);
+        return { success: false };
+    }
+}
+
+async function joinRoom(roomId, cookie, accid) {
+    try {
+        // 1. 身份验证
+        await verifyUserIdentity(cookie, roomId);
+        
+        // 2. 更新成员列表
+        await updateMemberList(roomId, cookie, accid);
+        
+        // 必要的延迟
+        await new Promise(resolve => setTimeout(resolve, 500));
+        
+        // 3. 触发系统广播
+        await triggerSystemBroadcast(roomId, cookie);
+        
+        // 4. 发送活动心跳
+        await sendActivityHeartbeat(roomId, cookie);
+        
+        // 5. 最终确认延迟
+        await new Promise(resolve => setTimeout(resolve, 1000));
+
+        return true;
+    } catch (error) {
+        console.error('进入房间失败:', error);
+        return false;
+    }
+}
 
 const handler = async (req, res) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
@@ -56,15 +259,16 @@ const handler = async (req, res) => {
                 state.currentRoomId = roomId;
                 state.userData = userInfo.data;
 
-                await joinRoom(roomId, cookie, state.userData.accid);
-                const heartbeatResult = await heartbeat(state);
-
+                const joinResult = await joinRoom(roomId, cookie, userInfo.data.accid);
+                const heartbeatResult = await sendActivityHeartbeat(roomId, cookie);
+                
                 return res.json({
                     success: true,
                     data: {
                         ...userInfo.data,
                         heartbeatStatus: heartbeatResult,
-                        roomId: roomId
+                        roomId: roomId,
+                        joinStatus: joinResult
                     }
                 });
             } else {
@@ -99,324 +303,24 @@ const handler = async (req, res) => {
     return res.status(404).json({ success: false, message: '未找到请求的接口' });
 };
 
-async function getNeteaseToken(cookie) {
-    try {
-        const response = await api.get('https://u.tuwan.com/Netease/login', {
-            params: {
-                callback: `jQuery${Math.random().toString().slice(2)}_${Date.now()}`,
-                _: Date.now()
-            },
-            headers: {
-                'Cookie': cookie,
-                'Referer': 'https://y.tuwan.com/'
-            }
-        });
-
-        const match = response.data.match(/\((.*?)\)/);
-        if (match) {
-            const data = JSON.parse(match[1]);
-            if (data.error === 0) {
-                return { success: true, ...data };
-            }
-        }
-        return { success: false };
-    } catch (error) {
-        console.error('获取token失败:', error);
-        return { success: false };
-    }
-}
-
-async function getUserInfo(cookie) {
-    try {
-        const tokenResult = await getNeteaseToken(cookie);
-        if (!tokenResult.success) {
-            return { success: false, message: '获取token失败' };
-        }
-
-        const response = await api.get('https://papi.tuwan.com/Chatroom/getuserinfo', {
-            params: {
-                requestfrom: 'selflogin',
-                uids: tokenResult.accid,
-                callback: `jQuery${Math.random().toString().slice(2)}_${Date.now()}`,
-                _: Date.now()
-            },
-            headers: {
-                'Cookie': cookie,
-                'Referer': 'https://y.tuwan.com/'
-            }
-        });
-
-        const match = response.data.match(/\((.*?)\)/);
-        if (match) {
-            const userData = JSON.parse(match[1]);
-            if (userData.error === 0 && userData.data && userData.data.length > 0) {
-                return {
-                    success: true,
-                    data: {
-                        ...userData.data[0],
-                        accid: tokenResult.accid,
-                        token: tokenResult.token,
-                        isLoggedIn: true,
-                        lastUpdate: new Date().toISOString()
-                    }
-                };
-            }
-        }
-        return { success: false, message: '获取用户信息失败' };
-    } catch (error) {
-        console.error('获取用户信息失败:', error);
-        return { success: false, message: error.message };
-    }
-}
-
-async function joinRoom(roomId, cookie, accid) {
-    try {
-        // 1. 获取网易通信 token
-        const neteaseResponse = await api.get('https://u.tuwan.com/Netease/login', {
-            params: {
-                callback: `jQuery${Math.random().toString().slice(2)}_${Date.now()}`,
-                _: Date.now()
-            },
-            headers: {
-                'Cookie': cookie,
-                'Referer': 'https://y.tuwan.com/'
-            }
-        });
-
-        // 2. 获取 soc token
-        await api.get('https://papi.tuwan.com/Api/getSocToken', {
-            params: {
-                callback: `jQuery${Math.random().toString().slice(2)}_${Date.now()}`,
-                _: Date.now()
-            },
-            headers: {
-                'Cookie': cookie,
-                'Referer': 'https://y.tuwan.com/'
-            }
-        });
-
-        // 3. 获取房间基本信息
-        await api.get('https://papi.tuwan.com/Api/getBaseUrl', {
-            params: {
-                format: 'jsonp',
-                callback: `jQuery${Math.random().toString().slice(2)}_${Date.now()}`,
-                _: Date.now()
-            },
-            headers: {
-                'Cookie': cookie,
-                'Referer': `https://y.tuwan.com/chatroom/${roomId}`
-            }
-        });
-
-        // 4. 获取房间列表
-        await api.get('https://papi.tuwan.com/Chatroom/getPcListV4', {
-            params: {
-                ver: '14',
-                format: 'jsonp',
-                navid: '0',
-                cid: roomId,
-                callback: `jQuery${Math.random().toString().slice(2)}_${Date.now()}`,
-                _: Date.now()
-            },
-            headers: {
-                'Cookie': cookie,
-                'Referer': `https://y.tuwan.com/chatroom/${roomId}`
-            }
-        });
-
-        // 5. 获取房间在线用户列表
-        await api.get('https://papi.tuwan.com/Chatroom/getuserinfo', {
-            params: {
-                requestfrom: 'addChannelUsers',
-                uids: accid,
-                callback: `jQuery${Math.random().toString().slice(2)}_${Date.now()}`,
-                _: Date.now()
-            },
-            headers: {
-                'Cookie': cookie,
-                'Referer': `https://y.tuwan.com/chatroom/${roomId}`
-            }
-        });
-
-        // 6. 发送加入房间请求
-        await api.get('https://papi.tuwan.com/Chatroom/getuserinfo', {
-            params: {
-                requestfrom: 'sms',
-                uids: `${accid}`,
-                callback: `jQuery${Math.random().toString().slice(2)}_${Date.now()}`,
-                _: Date.now()
-            },
-            headers: {
-                'Cookie': cookie,
-                'Referer': `https://y.tuwan.com/chatroom/${roomId}`
-            }
-        });
-
-        // 7. 获取房间状态
-        await api.get('https://papi.tuwan.com/Game/getGameStatus', {
-            params: {
-                format: 'jsonp',
-                cid: roomId,
-                callback: `jQuery${Math.random().toString().slice(2)}_${Date.now()}`,
-                _: Date.now()
-            },
-            headers: {
-                'Cookie': cookie,
-                'Referer': `https://y.tuwan.com/chatroom/${roomId}`
-            }
-        });
-
-        // 8. 处理活动状态
-        await api.get('https://activity.tuwan.com/chatroomstar/nowStar', {
-            params: {
-                cid: roomId,
-                callback: `jQuery${Math.random().toString().slice(2)}_${Date.now()}`,
-                _: Date.now()
-            },
-            headers: {
-                'Cookie': cookie,
-                'Referer': `https://y.tuwan.com/chatroom/${roomId}`
-            }
-        });
-
-        // 9. 发送活动心跳
-        await api.get('https://activity.tuwan.com/Activitymanagement/activity', {
-            params: {
-                cid: roomId,
-                from: '1',
-                callback: `jQuery${Math.random().toString().slice(2)}_${Date.now()}`,
-                _: Date.now()
-            },
-            headers: {
-                'Cookie': cookie,
-                'Referer': `https://y.tuwan.com/chatroom/${roomId}`
-            }
-        });
-
-        // 10. 状态上报
-        await api.post('https://app-diandian-report.tuwan.com/', 
-            querystring.stringify({
-                roomId: roomId,
-                status: 'online',
-                timestamp: Date.now()
-            }),
-            {
-                headers: {
-                    'Cookie': cookie,
-                    'Referer': `https://y.tuwan.com/chatroom/${roomId}`,
-                    'Content-Type': 'application/x-www-form-urlencoded',
-                    'Origin': 'https://y.tuwan.com'
-                }
-            }
-        );
-
-        // 11. 获取金币信息
-        await api.get('https://papi.tuwan.com/Teacher/getMoney', {
-            params: {
-                callback: `jQuery${Math.random().toString().slice(2)}_${Date.now()}`,
-                _: Date.now()
-            },
-            headers: {
-                'Cookie': cookie,
-                'Referer': `https://y.tuwan.com/chatroom/${roomId}`
-            }
-        });
-
-        // 等待一下确保所有请求处理完成
-        await new Promise(resolve => setTimeout(resolve, 1000));
-
-        return true;
-    } catch (error) {
-        console.error('进入房间失败:', error);
-        return false;
-    }
-}
-
-async function sendActivityHeartbeat(roomId, cookie) {
-    try {
-        const response = await api.get('https://activity.tuwan.com/Activitymanagement/activity', {
-            params: {
-                cid: roomId,
-                from: '1',
-                callback: `jQuery${Math.random().toString().slice(2)}_${Date.now()}`,
-                _: Date.now()
-            },
-            headers: {
-                'Cookie': cookie,
-                'Referer': `https://y.tuwan.com/chatroom/${roomId}`
-            }
-        });
-        return !response.data.includes('请先登录');
-    } catch (error) {
-        console.error('心跳发送失败:', error);
-        return false;
-    }
-}
-
-async function reportOnlineStatus(roomId, cookie) {
-    try {
-        await api.post('https://app-diandian-report.tuwan.com/',
-            querystring.stringify({
-                roomId: roomId,
-                status: 'online',
-                timestamp: Date.now()
-            }),
-            {
-                headers: {
-                    'Cookie': cookie,
-                    'Referer': `https://y.tuwan.com/chatroom/${roomId}`,
-                    'Content-Type': 'application/x-www-form-urlencoded',
-                    'Origin': 'https://y.tuwan.com'
-                }
-            }
-        );
-        return true;
-    } catch (error) {
-        console.error('状态上报失败:', error);
-        return false;
-    }
-}
-
-async function heartbeat(state) {
-    if (!state.currentCookie || !state.currentRoomId) {
-        state.heartbeatStatus = false;
-        return false;
-    }
-
-    try {
-        const userCheck = await getUserInfo(state.currentCookie);
-        if (!userCheck.success) {
-            state.heartbeatStatus = false;
-            return false;
-        }
-
-        const activityResult = await sendActivityHeartbeat(state.currentRoomId, state.currentCookie);
-        await reportOnlineStatus(state.currentRoomId, state.currentCookie);
-        
-        state.lastHeartbeatTime = new Date();
-        state.heartbeatStatus = activityResult;
-        return activityResult;
-    } catch (error) {
-        console.error('心跳检测失败:', error);
-        state.heartbeatStatus = false;
-        return false;
-    }
-}
-
+// 心跳定时任务
 setInterval(() => {
-    globalState.forEach((state, sessionId) => {
-        if (state.currentCookie && state.currentRoomId) {
-            heartbeat(state).catch(console.error);
+    globalState.forEach((state) => {
+        if(state.currentCookie && state.currentRoomId) {
+            sendActivityHeartbeat(state.currentRoomId, state.currentCookie)
+                .catch(err => console.error('Enhanced heartbeat failed:', err));
         }
     });
-}, 2 * 60 * 1000);
+}, process.env.HEARTBEAT_INTERVAL || 120000);
 
+// 状态上报定时任务
 setInterval(() => {
-    globalState.forEach((state, sessionId) => {
-        if (state.currentCookie && state.currentRoomId) {
-            reportOnlineStatus(state.currentRoomId, state.currentCookie).catch(console.error);
+    globalState.forEach((state) => {
+        if(state.currentCookie && state.currentRoomId) {
+            triggerSystemBroadcast(state.currentRoomId, state.currentCookie)
+                .catch(err => console.error('Status report failed:', err));
         }
     });
-}, 60 * 1000);
+}, 60000);
 
 module.exports = handler;

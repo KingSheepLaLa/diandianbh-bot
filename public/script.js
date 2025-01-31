@@ -1,4 +1,17 @@
-// 获取页面元素引用
+// Utility functions
+function formatTimestamp(timestamp) {
+    return new Date(timestamp).toLocaleString('zh-CN', {
+        hour12: false,
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit'
+    });
+}
+
+// DOM Elements
 const configForm = document.getElementById('configForm');
 const roomIdInput = document.getElementById('roomId');
 const previewLink = document.getElementById('previewLink');
@@ -18,6 +31,7 @@ const errorModal = document.getElementById('errorModal');
 const errorMessage = document.getElementById('errorMessage');
 const closeErrorModal = document.getElementById('closeErrorModal');
 
+// State
 const startTime = new Date();
 let autoScrollEnabled = true;
 let statusCheckInterval = null;
@@ -29,7 +43,9 @@ function showError(message) {
 
 function addLog(message, type = 'info') {
     const logItem = document.createElement('div');
-    logItem.className = `log-item ${type === 'error' ? 'log-error' : type === 'success' ? 'log-success' : ''}`;
+    logItem.className = `log-item ${type === 'error' ? 'log-error' : 
+                                   type === 'success' ? 'log-success' : 
+                                   type === 'warning' ? 'log-warning' : ''}`;
     
     const time = document.createElement('span');
     time.className = 'log-time';
@@ -41,6 +57,7 @@ function addLog(message, type = 'info') {
     
     logItem.appendChild(time);
     logItem.appendChild(content);
+    
     logContainer.insertBefore(logItem, logContainer.firstChild);
 
     if (autoScrollEnabled) {
@@ -53,7 +70,8 @@ function addLog(message, type = 'info') {
 }
 
 function updateRunningTime() {
-    const diff = Date.now() - startTime;
+    const now = new Date();
+    const diff = now - startTime;
     const hours = Math.floor(diff / (1000 * 60 * 60));
     const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
     runningTime.textContent = `${hours}小时${minutes}分钟`;
@@ -80,6 +98,29 @@ function updateConnectionStatus(isConnected) {
     }
 }
 
+async function checkRoomStatus() {
+    try {
+        const roomId = roomIdInput.value;
+        if (!roomId) return;
+
+        const response = await fetch('https://papi.tuwan.com/Chatroom/getPcListV4', {
+            method: 'GET',
+            headers: {
+                'Referer': `https://y.tuwan.com/chatroom/${roomId}`
+            }
+        });
+        
+        const data = await response.json();
+        if (data.error === 0) {
+            addLog(`房间 ${roomId} 状态正常`, 'success');
+        } else {
+            addLog(`房间 ${roomId} 状态异常: ${data.message}`, 'warning');
+        }
+    } catch (error) {
+        console.error('检查房间状态失败:', error);
+    }
+}
+
 async function updateStatus() {
     try {
         const response = await fetch('/api/status');
@@ -90,7 +131,7 @@ async function updateStatus() {
                 <p>用户名: <span class="font-medium">${status.userData.nickname || '未知'}</span></p>
                 <p>账号 ID: <span class="text-gray-600">${status.userData.accid || '未知'}</span></p>
                 <p>状态: <span class="text-green-600 font-medium">已登录</span></p>
-                <p>最后更新: <span class="text-gray-600">${new Date(status.userData.lastUpdate).toLocaleString()}</span></p>
+                <p>最后更新: <span class="text-gray-600">${formatTimestamp(status.userData.lastUpdate)}</span></p>
             `;
         } else {
             userInfo.innerHTML = `
@@ -110,16 +151,20 @@ async function updateStatus() {
         heartbeatStatus.className = status.heartbeatStatus ? 'text-green-600 font-medium' : 'text-red-600 font-medium';
         
         if (status.lastHeartbeat) {
-            lastHeartbeat.textContent = new Date(status.lastHeartbeat).toLocaleString();
+            lastHeartbeat.textContent = formatTimestamp(status.lastHeartbeat);
         }
         
         if (status.lastStatusReport) {
-            lastReport.textContent = new Date(status.lastStatusReport).toLocaleString();
+            lastReport.textContent = formatTimestamp(status.lastStatusReport);
         }
         
         updateRunningTime();
         updateConnectionStatus(status.isLoggedIn);
 
+        if (!status.heartbeatStatus && status.isLoggedIn) {
+            addLog('检测到心跳异常，准备重连...', 'warning');
+            await attemptReconnect();
+        }
     } catch (error) {
         console.error('获取状态失败:', error);
         addLog('获取状态失败: ' + error.message, 'error');
@@ -149,6 +194,9 @@ async function attemptReconnect() {
         
         if (result.success) {
             addLog('重新连接成功！', 'success');
+            if (result.data.joinStatus) {
+                addLog('成功进入房间！', 'success');
+            }
             await updateStatus();
             startStatusCheck();
         } else {
@@ -209,17 +257,28 @@ configForm.addEventListener('submit', async (e) => {
             addLog('配置更新成功！', 'success');
             addLog(`用户 ${result.data.nickname} 已连接到房间 ${config.roomId}`, 'success');
             
+            // 检查进房状态
+            if (result.data.joinStatus) {
+                addLog('成功进入房间！', 'success');
+            } else {
+                addLog('进入房间可能不完整，尝试重连...', 'warning');
+                await attemptReconnect();
+            }
+            
             updatePreviewLink(config.roomId);
             await updateStatus();
             startStatusCheck();
+            await checkRoomStatus();
         } else {
             addLog('配置更新失败: ' + result.message, 'error');
             showError('配置更新失败: ' + result.message);
+            stopStatusCheck();
         }
     } catch (error) {
         console.error('配置更新失败:', error);
         addLog('配置更新失败: ' + error.message, 'error');
         showError('配置更新失败，请检查网络连接');
+        stopStatusCheck();
     } finally {
         const submitButton = configForm.querySelector('button[type="submit"]');
         submitButton.disabled = false;
@@ -227,6 +286,7 @@ configForm.addEventListener('submit', async (e) => {
     }
 });
 
+// Event Listeners
 roomIdInput.addEventListener('input', (e) => {
     updatePreviewLink(e.target.value);
 });
