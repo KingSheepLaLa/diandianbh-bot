@@ -12,11 +12,9 @@ const api = axios.create({
     }
 });
 
-// 全局状态
 const globalState = new Map();
 
 const handler = async (req, res) => {
-    // CORS headers
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
@@ -26,7 +24,6 @@ const handler = async (req, res) => {
         return;
     }
 
-    // 获取或创建会话状态
     const sessionId = req.headers['x-session-id'] || 'default';
     if (!globalState.has(sessionId)) {
         globalState.set(sessionId, {
@@ -41,7 +38,6 @@ const handler = async (req, res) => {
     }
     const state = globalState.get(sessionId);
 
-    // API路由处理
     if (req.method === 'POST' && req.url === '/api/update-config') {
         try {
             const { roomId, cookie } = req.body;
@@ -58,7 +54,7 @@ const handler = async (req, res) => {
                 state.currentRoomId = roomId;
                 state.userData = userInfo.data;
 
-                await joinRoom(roomId, cookie);
+                await joinRoom(roomId, cookie, state.userData.accid);
                 const heartbeatResult = await heartbeat(state);
 
                 return res.json({
@@ -98,9 +94,34 @@ const handler = async (req, res) => {
         });
     }
 
-    // 默认返回404
     return res.status(404).json({ success: false, message: '未找到请求的接口' });
 };
+
+async function getNeteaseToken(cookie) {
+    try {
+        const response = await api.get('https://u.tuwan.com/Netease/login', {
+            params: {
+                callback: `jQuery${Math.random().toString().slice(2)}_${Date.now()}`,
+                _: Date.now()
+            },
+            headers: {
+                'Cookie': cookie,
+                'Referer': 'https://y.tuwan.com/'
+            }
+        });
+
+        const match = response.data.match(/\((.*?)\)/);
+        if (match) {
+            const data = JSON.parse(match[1]);
+            if (data.error === 0) {
+                return { success: true, ...data };
+            }
+        }
+        return { success: false };
+    } catch (error) {
+        return { success: false };
+    }
+}
 
 async function getUserInfo(cookie) {
     try {
@@ -144,35 +165,22 @@ async function getUserInfo(cookie) {
     }
 }
 
-async function getNeteaseToken(cookie) {
+async function joinRoom(roomId, cookie, accid) {
     try {
-        const response = await api.get('https://u.tuwan.com/Netease/login', {
+        // 1. 获取房间基本信息
+        await api.get('https://papi.tuwan.com/Api/getBaseUrl', {
             params: {
+                format: 'jsonp',
                 callback: `jQuery${Math.random().toString().slice(2)}_${Date.now()}`,
                 _: Date.now()
             },
             headers: {
                 'Cookie': cookie,
-                'Referer': 'https://y.tuwan.com/'
+                'Referer': `https://y.tuwan.com/chatroom/${roomId}`
             }
         });
 
-        const match = response.data.match(/\((.*?)\)/);
-        if (match) {
-            const data = JSON.parse(match[1]);
-            if (data.error === 0) {
-                return { success: true, ...data };
-            }
-        }
-        return { success: false };
-    } catch (error) {
-        return { success: false };
-    }
-}
-
-async function joinRoom(roomId, cookie) {
-    try {
-        // 获取房间信息
+        // 2. 获取房间列表
         await api.get('https://papi.tuwan.com/Chatroom/getPcListV4', {
             params: {
                 ver: '14',
@@ -188,7 +196,7 @@ async function joinRoom(roomId, cookie) {
             }
         });
 
-        // 获取房间状态
+        // 3. 获取房间状态
         await api.get('https://papi.tuwan.com/Game/getGameStatus', {
             params: {
                 format: 'jsonp',
@@ -202,9 +210,92 @@ async function joinRoom(roomId, cookie) {
             }
         });
 
-        await reportOnlineStatus(roomId, cookie);
+        // 4. 进房初始化
+        await api.get('https://papi.tuwan.com/diamond/getQuestionList', {
+            params: {
+                callback: `jQuery${Math.random().toString().slice(2)}_${Date.now()}`,
+                _: Date.now()
+            },
+            headers: {
+                'Cookie': cookie,
+                'Referer': `https://y.tuwan.com/chatroom/${roomId}`
+            }
+        });
+
+        // 5. 获取房间状态
+        await api.get('https://papi.tuwan.com/Agora/webinfo', {
+            params: {
+                apiver: '6',
+                channel: roomId,
+                callback: `jQuery${Math.random().toString().slice(2)}_${Date.now()}`,
+                _: Date.now()
+            },
+            headers: {
+                'Cookie': cookie,
+                'Referer': `https://y.tuwan.com/chatroom/${roomId}`
+            }
+        });
+
+        // 6. 获取用户列表
+        await api.get('https://papi.tuwan.com/Chatroom/getuserinfo', {
+            params: {
+                requestfrom: 'addChannelUsers',
+                uids: accid,
+                callback: `jQuery${Math.random().toString().slice(2)}_${Date.now()}`,
+                _: Date.now()
+            },
+            headers: {
+                'Cookie': cookie,
+                'Referer': `https://y.tuwan.com/chatroom/${roomId}`
+            }
+        });
+
+        // 7. 活动心跳
+        await api.get('https://activity.tuwan.com/Activitymanagement/activity', {
+            params: {
+                cid: roomId,
+                from: '1',
+                callback: `jQuery${Math.random().toString().slice(2)}_${Date.now()}`,
+                _: Date.now()
+            },
+            headers: {
+                'Cookie': cookie,
+                'Referer': `https://y.tuwan.com/chatroom/${roomId}`
+            }
+        });
+
+        // 8. 状态上报
+        await api.post('https://app-diandian-report.tuwan.com/', 
+            querystring.stringify({
+                roomId: roomId,
+                status: 'online',
+                timestamp: Date.now()
+            }),
+            {
+                headers: {
+                    'Cookie': cookie,
+                    'Referer': `https://y.tuwan.com/chatroom/${roomId}`,
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                    'Origin': 'https://y.tuwan.com'
+                }
+            }
+        );
+
+        // 9. 获取金币信息
+        await api.get('https://papi.tuwan.com/Teacher/getMoney', {
+            params: {
+                callback: `jQuery${Math.random().toString().slice(2)}_${Date.now()}`,
+                _: Date.now()
+            },
+            headers: {
+                'Cookie': cookie,
+                'Referer': `https://y.tuwan.com/chatroom/${roomId}`
+            }
+        });
+
         return true;
     } catch (error) {
+        console.error('进入房间失败:', error);
         return false;
     }
 }
@@ -281,9 +372,6 @@ async function heartbeat(state) {
         return false;
     }
 }
-
-// 定时任务处理
-const sessions = new Map();
 
 setInterval(() => {
     globalState.forEach((state, sessionId) => {
