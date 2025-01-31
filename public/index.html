@@ -4,7 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>点点开黑 - 自动挂厅控制台</title>
+    <!-- 使用 Tailwind CSS 来构建美观的界面 -->
     <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <!-- 自定义样式 -->
     <link rel="stylesheet" href="/style.css">
 </head>
 <body class="bg-gray-50 min-h-screen">
@@ -17,7 +19,7 @@
             </div>
             
             <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <!-- 用户信息卡片 -->
+                <!-- 用户状态卡片 -->
                 <div class="bg-blue-50 p-4 rounded-lg">
                     <h3 class="text-lg font-semibold text-blue-800 mb-3">账号状态</h3>
                     <div id="userInfo" class="space-y-2">
@@ -25,13 +27,14 @@
                     </div>
                 </div>
                 
-                <!-- 挂机状态卡片 -->
+                <!-- 运行状态卡片 -->
                 <div class="bg-green-50 p-4 rounded-lg">
-                    <h3 class="text-lg font-semibold text-green-800 mb-3">挂机状态</h3>
+                    <h3 class="text-lg font-semibold text-green-800 mb-3">运行状态</h3>
                     <div class="space-y-2">
                         <p>当前房间: <span id="currentRoom" class="font-medium">-</span></p>
                         <p>心跳状态: <span id="heartbeatStatus" class="font-medium">-</span></p>
                         <p>最后心跳: <span id="lastHeartbeat" class="text-gray-600">-</span></p>
+                        <p>最后上报: <span id="lastReport" class="text-gray-600">-</span></p>
                     </div>
                 </div>
 
@@ -74,7 +77,7 @@
                             预览房间
                         </a>
                     </div>
-                    <p class="mt-1 text-sm text-gray-500">从房间URL中获取，例如：https://y.tuwan.com/chatroom/49499?r=20201125 中的 49499</p>
+                    <p class="mt-1 text-sm text-gray-500">从房间URL中获取，例如：https://y.tuwan.com/chatroom/49499 中的 49499</p>
                 </div>
 
                 <!-- Cookie配置 -->
@@ -91,21 +94,23 @@
                         placeholder="请粘贴从浏览器复制的Cookie值"></textarea>
                 </div>
 
-                <!-- 配置说明 -->
+                <!-- Cookie获取教程 -->
                 <div class="bg-blue-50 p-4 rounded-lg">
-                    <h3 class="text-sm font-semibold text-blue-800 mb-2">配置说明</h3>
+                    <h3 class="text-sm font-semibold text-blue-800 mb-2">Cookie获取说明</h3>
                     <ol class="text-sm text-blue-700 space-y-1 list-decimal list-inside">
-                        <li>访问想要挂机的点点开黑房间页面</li>
-                        <li>从地址栏复制房间号填入上方输入框</li>
+                        <li>使用浏览器访问并登录点点开黑网站</li>
+                        <li>前往想要挂机的房间页面</li>
+                        <li>从地址栏复制房间号</li>
                         <li>按F12打开开发者工具（或右键点击 -> 检查）</li>
                         <li>切换到"网络"(Network)标签</li>
-                        <li>筛选器中选择"Fetch/XHR"</li>
+                        <li>筛选器中选择"XHR"</li>
                         <li>刷新页面</li>
                         <li>找到 getuserinfo 请求</li>
-                        <li>在请求头中复制 Cookie 值</li>
+                        <li>在请求头中找到并复制完整的 Cookie 值</li>
                     </ol>
                 </div>
 
+                <!-- 配置提交按钮 -->
                 <button type="submit"
                     class="w-full bg-blue-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-blue-700 transition duration-200">
                     启动挂机

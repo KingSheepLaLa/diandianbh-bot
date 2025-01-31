@@ -17,7 +17,7 @@
     background: #555;
 }
 
-/* 日志项样式 */
+/* 日志条目样式 */
 .log-item {
     padding: 4px 0;
     border-bottom: 1px solid #eee;
@@ -40,7 +40,7 @@
     color: #059669;
 }
 
-/* 加载动画 */
+/* 加载状态动画 */
 .loading {
     animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
@@ -54,7 +54,7 @@
     }
 }
 
-/* 输入框内容溢出处理 */
+/* 确保长文本能够正确换行 */
 input[type="text"], textarea {
     word-break: break-all;
     word-wrap: break-word;
