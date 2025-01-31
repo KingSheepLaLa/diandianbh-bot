@@ -1,10 +1,9 @@
 // api/index.js
-// 这个文件实现了点点开黑的自动挂机系统，通过模拟多层次的在线状态维护机制
-
 const express = require('express');
 const axios = require('axios');
 const path = require('path');
 const querystring = require('querystring');
+const WebSocket = require('ws');
 
 // 创建Express应用
 const app = express();
@@ -21,30 +20,29 @@ let lastHeartbeatTime = null;     // 最后心跳时间
 let lastStatusReportTime = null;  // 最后状态上报时间
 let heartbeatStatus = false;      // 心跳状态
 let userData = null;              // 用户数据缓存
+let wsConnection = null;          // WebSocket连接
+let neteaseToken = null;          // 网易通信token
 const startTime = new Date();     // 系统启动时间
 
 // 创建axios实例并配置通用请求头
 const api = axios.create({
     timeout: 10000,
     headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36 Edg/132.0.0.0',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36',
         'Accept': '*/*',
-        'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8,en-GB;q=0.7,en-US;q=0.6',
-        'Accept-Encoding': 'gzip, deflate, br, zstd',
-        'sec-ch-ua': '"Not A(Brand";v="8", "Chromium";v="132", "Microsoft Edge";v="132"',
+        'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+        'Accept-Encoding': 'gzip, deflate, br',
+        'sec-ch-ua': '"Not A(Brand";v="8", "Chromium";v="132"',
         'sec-ch-ua-mobile': '?0',
-        'sec-ch-ua-platform': '"Windows"',
-        'sec-fetch-dest': 'script',
-        'sec-fetch-mode': 'no-cors',
-        'sec-fetch-site': 'same-site'
+        'sec-ch-ua-platform': '"Windows"'
     }
 });
 
 /**
- * 获取用户登录token
- * 这是在线状态维护的第一层：获取基础认证信息
+ * 获取网易通信token
+ * 用于建立WebSocket连接和实现实时通信
  */
-async function getLoginToken(cookie) {
+async function getNeteaseToken(cookie) {
     try {
         const response = await api.get('https://u.tuwan.com/Netease/login', {
             params: {
@@ -58,44 +56,123 @@ async function getLoginToken(cookie) {
             }
         });
 
-        // 解析JSONP响应
         const match = response.data.match(/\((.*?)\)/);
         if (match) {
             const data = JSON.parse(match[1]);
             if (data.error === 0) {
+                neteaseToken = data;
                 return {
                     success: true,
-                    token: data.token,
-                    accid: data.accid,
-                    appkey: data.appkey
+                    ...data
                 };
             }
         }
-
-        return { success: false };
+        return { success: false, message: '获取token失败' };
     } catch (error) {
-        console.error('获取token失败:', error);
-        return { success: false };
+        console.error('获取网易token失败:', error);
+        return { success: false, message: error.message };
     }
 }
 
 /**
+ * 获取房间基础信息
+ * 获取房间的在线用户列表等信息
+ */
+async function getRoomInfo(roomId, cookie) {
+    try {
+        const response = await api.get('https://papi.tuwan.com/Chatroom/getPcListV4', {
+            params: {
+                ver: '14',
+                format: 'jsonp',
+                navid: '0',
+                cid: roomId,
+                callback: `jQuery${Math.random().toString().slice(2)}_${Date.now()}`,
+                _: Date.now()
+            },
+            headers: {
+                'Cookie': cookie,
+                'Referer': `https://y.tuwan.com/chatroom/${roomId}`,
+                'Host': 'papi.tuwan.com'
+            }
+        });
+
+        const match = response.data.match(/\((.*?)\)/);
+        if (match) {
+            const data = JSON.parse(match[1]);
+            return {
+                success: true,
+                data: data
+            };
+        }
+        return { success: false, message: '获取房间信息失败' };
+    } catch (error) {
+        console.error('获取房间信息失败:', error);
+        return { success: false, message: error.message };
+    }
+}
+
+/**
+ * 建立WebSocket连接
+ * 用于接收和发送实时消息
+ */
+async function setupWebSocket(token) {
+    if (wsConnection) {
+        wsConnection.close();
+    }
+
+    return new Promise((resolve, reject) => {
+        try {
+            const ws = new WebSocket('wss://chat.tuwan.com/socket.io/?EIO=3&transport=websocket');
+
+            ws.on('open', () => {
+                console.log('WebSocket连接已建立');
+                wsConnection = ws;
+                // 发送初始连接消息
+                ws.send('40/chat,');
+                resolve(true);
+            });
+
+            ws.on('message', (data) => {
+                console.log('收到WebSocket消息:', data.toString());
+                // 处理心跳包
+                if (data.toString() === '2') {
+                    ws.send('3');
+                }
+            });
+
+            ws.on('error', (error) => {
+                console.error('WebSocket错误:', error);
+                reject(error);
+            });
+
+            ws.on('close', () => {
+                console.log('WebSocket连接已关闭');
+                wsConnection = null;
+            });
+        } catch (error) {
+            console.error('建立WebSocket连接失败:', error);
+            reject(error);
+        }
+    });
+}
+
+/**
  * 获取用户详细信息
- * 这是在线状态维护的第二层：验证用户身份并获取详细信息
+ * 验证用户身份并获取详细信息
  */
 async function getUserInfo(cookie) {
     try {
-        // 先获取登录token
-        const tokenResult = await getLoginToken(cookie);
+        // 先获取网易token
+        const tokenResult = await getNeteaseToken(cookie);
         if (!tokenResult.success) {
             return {
                 success: false,
-                message: '登录token获取失败'
+                message: '获取网易token失败'
             };
         }
 
         // 获取用户详细信息
-        const userInfoResponse = await api.get('https://papi.tuwan.com/Chatroom/getuserinfo', {
+        const response = await api.get('https://papi.tuwan.com/Chatroom/getuserinfo', {
             params: {
                 requestfrom: 'selflogin',
                 uids: tokenResult.accid,
@@ -109,12 +186,10 @@ async function getUserInfo(cookie) {
             }
         });
 
-        // 解析用户信息响应
-        const userMatch = userInfoResponse.data.match(/\((.*?)\)/);
-        if (userMatch) {
-            const userData = JSON.parse(userMatch[1]);
+        const match = response.data.match(/\((.*?)\)/);
+        if (match) {
+            const userData = JSON.parse(match[1]);
             if (userData.error === 0 && userData.data && userData.data.length > 0) {
-                console.log('用户信息获取成功:', userData.data[0]);
                 return {
                     success: true,
                     data: {
@@ -133,7 +208,7 @@ async function getUserInfo(cookie) {
             message: '用户信息获取失败'
         };
     } catch (error) {
-        console.error('用户信息获取失败:', error);
+        console.error('获取用户信息失败:', error);
         return {
             success: false,
             message: error.message
@@ -142,12 +217,53 @@ async function getUserInfo(cookie) {
 }
 
 /**
+ * 进入房间
+ * 发送进入房间请求并初始化房间状态
+ */
+async function joinRoom(roomId, cookie) {
+    try {
+        // 1. 获取房间基础信息
+        const roomInfo = await getRoomInfo(roomId, cookie);
+        if (!roomInfo.success) {
+            return false;
+        }
+
+        // 2. 发送房间初始化请求
+        const response = await api.get('https://papi.tuwan.com/Game/getGameStatus', {
+            params: {
+                format: 'jsonp',
+                cid: roomId,
+                callback: `jQuery${Math.random().toString().slice(2)}_${Date.now()}`,
+                _: Date.now()
+            },
+            headers: {
+                'Cookie': cookie,
+                'Referer': `https://y.tuwan.com/chatroom/${roomId}`,
+                'Host': 'papi.tuwan.com'
+            }
+        });
+
+        // 3. 通过WebSocket发送进入房间消息
+        if (wsConnection && wsConnection.readyState === WebSocket.OPEN) {
+            wsConnection.send(JSON.stringify({
+                type: 'join',
+                roomId: roomId,
+                userId: userData.accid
+            }));
+        }
+
+        return true;
+    } catch (error) {
+        console.error('进入房间失败:', error);
+        return false;
+    }
+}
+
+/**
  * 发送活动状态心跳
- * 这是在线状态维护的第三层：房间活动状态保持
  */
 async function sendActivityHeartbeat() {
     if (!currentCookie || !currentRoomId) {
-        console.log('缺少Cookie或房间ID，跳过活动心跳');
         return false;
     }
 
@@ -166,22 +282,19 @@ async function sendActivityHeartbeat() {
             }
         });
 
-        // 检查响应状态
         if (response.data.includes('请先登录')) {
-            console.log('活动心跳检测到登录失效');
             return false;
         }
 
         return true;
     } catch (error) {
-        console.error('活动心跳发送失败:', error.message);
+        console.error('活动心跳发送失败:', error);
         return false;
     }
 }
 
 /**
  * 上报在线状态
- * 这是在线状态维护的第四层：状态上报系统
  */
 async function reportOnlineStatus() {
     if (!currentCookie || !currentRoomId) {
@@ -208,18 +321,16 @@ async function reportOnlineStatus() {
         lastStatusReportTime = new Date();
         return true;
     } catch (error) {
-        console.error('状态上报失败:', error.message);
+        console.error('状态上报失败:', error);
         return false;
     }
 }
 
 /**
  * 复合心跳检测
- * 整合所有层次的在线状态维护机制
  */
 async function heartbeat() {
     if (!currentCookie || !currentRoomId) {
-        console.log('未设置Cookie或房间ID，跳过心跳');
         heartbeatStatus = false;
         return false;
     }
@@ -228,15 +339,18 @@ async function heartbeat() {
         // 验证用户信息
         const userCheck = await getUserInfo(currentCookie);
         if (!userCheck.success) {
-            console.log('用户信息验证失败');
             heartbeatStatus = false;
             return false;
+        }
+
+        // 确保WebSocket连接
+        if (!wsConnection || wsConnection.readyState !== WebSocket.OPEN) {
+            await setupWebSocket(neteaseToken);
         }
 
         // 发送活动心跳
         const activityResult = await sendActivityHeartbeat();
         if (!activityResult) {
-            console.log('活动心跳失败');
             heartbeatStatus = false;
             return false;
         }
@@ -244,25 +358,21 @@ async function heartbeat() {
         // 上报在线状态
         const reportResult = await reportOnlineStatus();
         if (!reportResult) {
-            console.log('状态上报失败');
             heartbeatStatus = false;
             return false;
         }
 
         lastHeartbeatTime = new Date();
         heartbeatStatus = true;
-        console.log('心跳检测完成:', lastHeartbeatTime.toISOString());
         return true;
     } catch (error) {
-        console.error('心跳检测失败:', error.message);
+        console.error('心跳检测失败:', error);
         heartbeatStatus = false;
         return false;
     }
 }
 
-/**
- * 更新配置的API接口
- */
+// API路由处理
 app.post('/api/update-config', async (req, res) => {
     const { roomId, cookie } = req.body;
     
@@ -282,8 +392,20 @@ app.post('/api/update-config', async (req, res) => {
             currentCookie = cookie;
             currentRoomId = roomId;
             userData = userInfoResult.data;
+
+            // 建立WebSocket连接
+            await setupWebSocket(neteaseToken);
             
-            // 立即执行一次心跳检测
+            // 加入房间
+            const joinResult = await joinRoom(roomId, cookie);
+            if (!joinResult) {
+                return res.json({
+                    success: false,
+                    message: '加入房间失败'
+                });
+            }
+            
+            // 执行心跳检测
             const heartbeatResult = await heartbeat();
             
             res.json({
@@ -310,9 +432,6 @@ app.post('/api/update-config', async (req, res) => {
     }
 });
 
-/**
- * 获取当前状态的API接口
- */
 app.get('/api/status', async (req, res) => {
     try {
         let loginStatus = false;
@@ -337,6 +456,7 @@ app.get('/api/status', async (req, res) => {
             heartbeatStatus: heartbeatStatus,
             userData: userDetails,
             roomId: currentRoomId,
+            wsStatus: wsConnection ? wsConnection.readyState : -1,
             systemStatus: {
                 startTime: startTime,
                 uptime: Date.now() - startTime,
@@ -353,19 +473,20 @@ app.get('/api/status', async (req, res) => {
     }
 });
 
-// 主页路由
-app.get('/', (req, res) => {
-    res.sendFile(path.join(__dirname, '../public/index.html'));
-});
-
 // 健康检查接口
 app.get('/health', (req, res) => {
     res.json({ 
         status: 'ok',
         timestamp: new Date().toISOString(),
         uptime: Date.now() - startTime,
-        roomId: currentRoomId
+        roomId: currentRoomId,
+        wsStatus: wsConnection ? wsConnection.readyState : -1
     });
+});
+
+// 主页路由
+app.get('/', (req, res) => {
+    res.sendFile(path.join(__dirname, '../public/index.html'));
 });
 
 // 设置定时任务
@@ -375,6 +496,22 @@ setInterval(heartbeat, 2 * 60 * 1000);
 // 状态上报：每1分钟
 setInterval(reportOnlineStatus, 60 * 1000);
 
+// 自动重连WebSocket：每5分钟检查一次
+setInterval(async () => {
+    if (!wsConnection || wsConnection.readyState !== WebSocket.OPEN) {
+        if (currentCookie && neteaseToken) {
+            try {
+                await setupWebSocket(neteaseToken);
+                if (currentRoomId) {
+                    await joinRoom(currentRoomId, currentCookie);
+                }
+            } catch (error) {
+                console.error('WebSocket自动重连失败:', error);
+            }
+        }
+    }
+}, 5 * 60 * 1000);
+
 // 启动服务器
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
@@ -382,10 +519,12 @@ app.listen(PORT, () => {
     
     // 如果存在配置，立即开始心跳
     if (currentCookie && currentRoomId) {
-        getUserInfo(currentCookie).then(result => {
+        getUserInfo(currentCookie).then(async result => {
             if (result.success) {
                 userData = result.data;
-                return heartbeat();
+                await setupWebSocket(neteaseToken);
+                await joinRoom(currentRoomId, currentCookie);
+                await heartbeat();
             }
         }).catch(console.error);
     }
