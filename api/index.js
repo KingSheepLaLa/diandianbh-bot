@@ -5,6 +5,7 @@ const qs = require('qs');
 
 const app = express();
 
+// 中间件配置
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, '../public')));
@@ -14,6 +15,7 @@ const globalState = {
     cookie: '',
     roomId: '',
     userId: '',
+    nickname: '',
     neteaseToken: '',
     lastHeartbeat: null,
     lastReport: null,
@@ -38,21 +40,34 @@ const api = axios.create({
     }
 });
 
-// 工具函数：生成jQuery回调标识符
+// 生成jQuery回调标识符
 function generateCallback() {
     return `jQuery${Math.random().toString().slice(2)}_${Date.now()}`;
 }
 
-// 工具函数：解析JSONP响应
+// JSONP响应解析
 function parseJsonp(response) {
     try {
-        const match = response.data.match(/\((.*)\)/);
-        if (match) {
-            return JSON.parse(match[1]);
+        if (!response || !response.data) {
+            console.error('JSONP响应为空');
+            return null;
         }
-        return null;
+
+        const match = response.data.match(/\((.*)\)/);
+        if (!match || !match[1]) {
+            console.error('JSONP格式解析失败');
+            return null;
+        }
+
+        const jsonData = JSON.parse(match[1]);
+        if (typeof jsonData !== 'object') {
+            console.error('JSONP响应不是有效的对象');
+            return null;
+        }
+
+        return jsonData;
     } catch (error) {
-        console.error('解析JSONP响应失败:', error);
+        console.error('JSONP解析错误:', error);
         return null;
     }
 }
@@ -73,21 +88,39 @@ async function joinRoom() {
     };
 
     try {
-        console.log('开始进房流程...');
-
-        // 1. 获取基础URL配置
-        console.log('获取基础URL配置...');
-        await api.get('https://papi.tuwan.com/Api/getBaseUrl', {
+        // 1. 获取用户信息
+        console.log('获取用户信息...');
+        const userInfoResponse = await api.get('https://papi.tuwan.com/Chatroom/getuserinfo', {
             params: {
-                format: 'jsonp',
+                requestfrom: 'selflogin',
                 callback: generateCallback(),
                 _: Date.now()
             },
-            headers
+            headers: {
+                ...headers,
+                'Referer': 'https://y.tuwan.com/'
+            }
         });
 
-        // 2. 获取房间列表
-        console.log('获取房间列表...');
+        const userInfoData = parseJsonp(userInfoResponse);
+        console.log('用户信息响应:', userInfoData);
+
+        if (!userInfoData || userInfoData.error !== 0 || !userInfoData.data || !userInfoData.data[0]) {
+            console.error('用户信息解析失败:', userInfoData);
+            throw new Error('获取用户信息失败');
+        }
+
+        const userData = userInfoData.data[0];
+        globalState.userId = userData.uid;
+        globalState.nickname = userData.nickname;
+
+        console.log('成功获取用户信息:', {
+            userId: globalState.userId,
+            nickname: globalState.nickname
+        });
+
+        // 2. 获取房间信息
+        console.log('获取房间信息...');
         await api.get('https://papi.tuwan.com/Chatroom/getPcListV4', {
             params: {
                 ver: '14',
@@ -112,26 +145,7 @@ async function joinRoom() {
             headers
         });
 
-        // 4. 获取用户信息
-        console.log('获取用户信息...');
-        const userInfoResponse = await api.get('https://papi.tuwan.com/Chatroom/getuserinfo', {
-            params: {
-                requestfrom: 'selflogin',
-                callback: generateCallback(),
-                _: Date.now()
-            },
-            headers
-        });
-
-        const userInfo = parseJsonp(userInfoResponse);
-        if (userInfo?.data?.[0]?.uid) {
-            globalState.userId = userInfo.data[0].uid;
-            console.log('用户ID:', globalState.userId);
-        } else {
-            throw new Error('获取用户信息失败');
-        }
-
-        // 5. 获取登录令牌
+        // 4. 获取登录令牌
         console.log('获取登录令牌...');
         const loginResponse = await api.get('https://u.tuwan.com/Netease/login', {
             params: {
@@ -142,14 +156,14 @@ async function joinRoom() {
         });
 
         const loginData = parseJsonp(loginResponse);
-        if (loginData?.token) {
-            globalState.neteaseToken = loginData.token;
-            console.log('获取令牌成功');
-        } else {
-            throw new Error('获取登录令牌失败');
+        if (!loginData || loginData.error !== 0 || !loginData.token) {
+            throw new Error('登录令牌获取失败');
         }
 
-        // 6. 加入房间
+        globalState.neteaseToken = loginData.token;
+        console.log('登录令牌获取成功:', globalState.neteaseToken);
+
+        // 5. 加入房间
         console.log('发送加入房间请求...');
         await api.post('https://app-diandian-report.tuwan.com/', 
             qs.stringify({
@@ -158,14 +172,12 @@ async function joinRoom() {
                 action: 'joinRoom',
                 platform: 'web',
                 timestamp: Date.now(),
-                requestfrom: 'addChannelUsers',
                 token: globalState.neteaseToken
             }),
             { headers }
         );
 
-        // 7. 更新房间用户列表
-        console.log('更新房间用户列表...');
+        // 6. 触发用户列表更新
         await api.get('https://papi.tuwan.com/Chatroom/getuserinfo', {
             params: {
                 requestfrom: 'addChannelUsers',
@@ -176,8 +188,8 @@ async function joinRoom() {
             headers
         });
 
-        // 8. 发送在线状态
-        console.log('发送在线状态...');
+        // 7. 更新在线状态
+        console.log('更新在线状态...');
         await api.post('https://app-diandian-report.tuwan.com/', 
             qs.stringify({
                 roomId: globalState.roomId,
@@ -194,7 +206,7 @@ async function joinRoom() {
         startHeartbeat();
         return true;
     } catch (error) {
-        console.error('进房失败:', error);
+        console.error('进房流程出错:', error);
         throw error;
     }
 }
@@ -273,10 +285,7 @@ function startHeartbeat() {
         clearInterval(globalState.heartbeatInterval);
     }
 
-    // 立即发送一次心跳
     sendHeartbeat().catch(console.error);
-
-    // 设置定时发送
     globalState.heartbeatInterval = setInterval(() => {
         sendHeartbeat().catch(console.error);
     }, 30000);
@@ -294,17 +303,14 @@ app.post('/api/update-config', async (req, res) => {
     }
 
     try {
-        // 清理旧的心跳定时器
         if (globalState.heartbeatInterval) {
             clearInterval(globalState.heartbeatInterval);
         }
 
-        // 更新全局配置
         globalState.cookie = cookie;
         globalState.roomId = roomId;
         globalState.isConnected = false;
         
-        // 执行进房流程
         await joinRoom();
 
         res.json({
@@ -313,6 +319,7 @@ app.post('/api/update-config', async (req, res) => {
             data: {
                 roomId: roomId,
                 userId: globalState.userId,
+                nickname: globalState.nickname,
                 timestamp: Date.now()
             }
         });
@@ -332,6 +339,7 @@ app.get('/api/status', (req, res) => {
         lastReport: globalState.lastReport,
         roomId: globalState.roomId,
         userId: globalState.userId,
+        nickname: globalState.nickname,
         startTime: globalState.startTime,
         uptime: Date.now() - globalState.startTime,
         retryCount: globalState.retryCount
@@ -345,7 +353,6 @@ app.get('/health', (req, res) => {
     });
 });
 
-// 启动服务器
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
     console.log(`服务器启动成功，监听端口 ${PORT}`);
