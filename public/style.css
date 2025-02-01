@@ -1,11 +1,20 @@
-/* 基础样式重置和优化 */
+/* 基础样式重置 */
 * {
     margin: 0;
     padding: 0;
     box-sizing: border-box;
 }
 
-/* 日志容器滚动条样式 */
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+}
+
+/* 日志容器样式 */
+#logContainer {
+    background-color: #f8fafc;
+    transition: background-color 0.3s ease;
+}
+
 #logContainer::-webkit-scrollbar {
     width: 6px;
 }
@@ -18,6 +27,7 @@
 #logContainer::-webkit-scrollbar-thumb {
     background: #94a3b8;
     border-radius: 3px;
+    transition: background-color 0.3s ease;
 }
 
 #logContainer::-webkit-scrollbar-thumb:hover {
@@ -26,19 +36,22 @@
 
 /* 日志条目样式 */
 .log-entry {
-    padding: 4px 8px;
+    padding: 6px 8px;
+    margin-bottom: 4px;
     border-radius: 4px;
-    transition: background-color 0.2s;
+    transition: all 0.2s ease;
+    animation: fadeIn 0.3s ease;
 }
 
-.log-entry:hover {
-    background-color: #f8fafc;
+.log-entry:last-child {
+    margin-bottom: 0;
 }
 
 .log-timestamp {
     color: #64748b;
     margin-right: 8px;
     font-size: 0.9em;
+    font-family: 'JetBrains Mono', monospace;
 }
 
 .log-content {
@@ -48,21 +61,20 @@
 .log-error {
     color: #dc2626;
     background-color: #fef2f2;
+    border-left: 3px solid #dc2626;
+    padding-left: 12px;
 }
 
 .log-success {
     color: #059669;
     background-color: #f0fdf4;
+    border-left: 3px solid #059669;
+    padding-left: 12px;
 }
 
-/* 连接状态指示器动画 */
-.status-indicator {
-    display: inline-block;
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    margin-right: 6px;
-    transition: background-color 0.3s ease;
+/* 连接状态指示器 */
+#connectionIndicator {
+    transition: all 0.3s ease;
 }
 
 .status-connected {
@@ -75,6 +87,24 @@
     background-color: #ef4444;
 }
 
+.status-connecting {
+    background-color: #f59e0b;
+    animation: blink 1s infinite;
+}
+
+/* 表单元素样式 */
+input:focus, textarea:focus {
+    outline: none;
+    border-color: #3b82f6;
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+textarea {
+    font-family: 'JetBrains Mono', monospace;
+    resize: vertical;
+}
+
+/* 加载状态动画 */
 @keyframes pulse {
     0% {
         box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.4);
@@ -87,39 +117,108 @@
     }
 }
 
-/* 表单元素焦点效果 */
-input:focus, textarea:focus {
-    outline: none;
-    ring-color: rgba(59, 130, 246, 0.5);
-    ring-offset-color: #ffffff;
+@keyframes blink {
+    0%, 100% {
+        opacity: 1;
+    }
+    50% {
+        opacity: 0.5;
+    }
 }
 
-/* 加载状态动画 */
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(-10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* 按钮状态样式 */
+button:disabled {
+    opacity: 0.7;
+    cursor: not-allowed;
+}
+
+button {
+    transition: all 0.2s ease;
+}
+
+/* 系统状态指示器 */
+.system-status {
+    display: inline-flex;
+    align-items: center;
+    padding: 2px 8px;
+    border-radius: 9999px;
+    font-size: 0.875rem;
+    font-weight: 500;
+}
+
+.system-status-normal {
+    background-color: #d1fae5;
+    color: #059669;
+}
+
+.system-status-warning {
+    background-color: #fef3c7;
+    color: #d97706;
+}
+
+.system-status-error {
+    background-color: #fee2e2;
+    color: #dc2626;
+}
+
+/* 响应式调整 */
+@media (max-width: 640px) {
+    .container {
+        padding-left: 1rem;
+        padding-right: 1rem;
+    }
+
+    h1 {
+        font-size: 1.5rem;
+    }
+
+    h2 {
+        font-size: 1.25rem;
+    }
+
+    .grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+/* 动画效果 */
 .loading {
     position: relative;
+    pointer-events: none;
 }
 
 .loading::after {
     content: '';
     position: absolute;
-    width: 100%;
-    height: 100%;
     top: 0;
     left: 0;
+    width: 100%;
+    height: 100%;
     background: linear-gradient(
         90deg,
-        rgba(255,255,255, 0) 0%,
-        rgba(255,255,255, 0.2) 50%,
-        rgba(255,255,255, 0) 100%
+        rgba(255, 255, 255, 0) 0%,
+        rgba(255, 255, 255, 0.2) 50%,
+        rgba(255, 255, 255, 0) 100%
     );
-    animation: loading 1.5s infinite;
+    animation: shimmer 1.5s infinite;
 }
 
-@keyframes loading {
-    from {
+@keyframes shimmer {
+    0% {
         transform: translateX(-100%);
     }
-    to {
+    100% {
         transform: translateX(100%);
     }
 }
