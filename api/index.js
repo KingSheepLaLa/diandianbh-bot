@@ -5,7 +5,7 @@ const qs = require('qs');
 
 const app = express();
 
-// 基础中间件配置
+// 中间件配置
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, '../public')));
@@ -34,59 +34,59 @@ const globalState = {
     heartbeatInterval: null
 };
 
-// 创建axios实例并设置默认配置
+// 创建axios实例
 const api = axios.create({
     timeout: 10000,
     headers: {
         'User-Agent': CONFIG.USER_AGENT,
         'Accept': '*/*',
         'Accept-Language': 'zh-CN,zh;q=0.9',
-        'Accept-Encoding': 'gzip, deflate, br',
-        'sec-ch-ua': '"Not A(Brand";v="8", "Chromium";v="132"',
-        'sec-ch-ua-mobile': '?0',
-        'sec-ch-ua-platform': '"Windows"'
+        'Accept-Encoding': 'gzip, deflate, br'
     }
 });
 
-// 工具函数：生成jQuery回调标识符
+// 生成回调标识符
 function generateCallback() {
     return `jQuery${Math.random().toString().slice(2)}_${Date.now()}`;
 }
 
-// 工具函数：解析JSONP响应
+// 解析JSONP响应
 function parseJsonp(response) {
     try {
         if (!response?.data) {
-            console.error('JSONP响应为空');
+            console.error('Empty JSONP response');
             return null;
         }
 
-        const match = response.data.match(/\((.*?)\)/);
+        // 处理jQuery回调格式
+        const match = response.data.match(/(?:jQuery[0-9_]+\(|\()(.+?)(?:\);?|$)/);
         if (!match?.[1]) {
-            console.error('JSONP格式解析失败:', response.data);
+            console.error('Invalid JSONP format:', response.data);
             return null;
         }
 
-        return JSON.parse(match[1]);
+        const jsonData = JSON.parse(match[1]);
+        console.log('Parsed JSONP data:', jsonData);
+        return jsonData;
     } catch (error) {
-        console.error('JSONP解析错误:', error, '原始数据:', response.data);
+        console.error('JSONP parsing error:', error, 'Raw response:', response.data);
         return null;
     }
 }
 
-// 工具函数：从Cookie中提取Passport值
+// 从Cookie中提取Passport值
 function extractPassportFromCookie(cookie) {
     const match = cookie.match(/Tuwan_Passport=([^;]+)/);
     return match?.[1] || null;
 }
 
-// 主要进房流程实现
+// 进房流程实现
 async function joinRoom() {
     if (!globalState.cookie || !globalState.roomId) {
         throw new Error('缺少必要的配置信息');
     }
 
-    // 提取Passport值
+    // 从Cookie中提取Passport
     globalState.passportValue = extractPassportFromCookie(globalState.cookie);
     if (!globalState.passportValue) {
         throw new Error('无法获取登录凭证');
@@ -98,13 +98,15 @@ async function joinRoom() {
         'Accept-Language': 'zh-CN,zh;q=0.9',
         'Cookie': globalState.cookie,
         'Referer': `https://y.tuwan.com/chatroom/${globalState.roomId}`,
-        'Origin': 'https://y.tuwan.com'
+        'Origin': 'https://y.tuwan.com',
+        'Cache-Control': 'no-cache',
+        'Pragma': 'no-cache'
     };
 
     try {
         // 1. TGID验证
         console.log('执行TGID验证...');
-        const tgidResponse = await api.get('https://y.tuwan.com/sendTGID.ashx', {
+        await api.get('https://y.tuwan.com/sendTGID.ashx', {
             params: {
                 callback: 'console.log',
                 _: Date.now()
@@ -130,15 +132,36 @@ async function joinRoom() {
         });
 
         const userInfoData = parseJsonp(userInfoResponse);
+        console.log('User info response:', userInfoData);
+
         if (!userInfoData?.data?.[0]?.uid) {
-            console.error('用户信息响应:', userInfoData);
+            console.error('Invalid user information:', userInfoData);
             throw new Error('获取用户信息失败');
         }
 
         globalState.userId = userInfoData.data[0].uid;
         globalState.nickname = userInfoData.data[0].nickname;
 
-        // 3. 获取NIM Token
+        console.log('用户信息获取成功:', {
+            userId: globalState.userId,
+            nickname: globalState.nickname
+        });
+
+        // 3. 获取房间列表
+        console.log('获取房间列表...');
+        await api.get('https://papi.tuwan.com/Chatroom/getPcListV4', {
+            params: {
+                ver: '14',
+                format: 'jsonp',
+                navid: '0',
+                cid: globalState.roomId,
+                callback: generateCallback(),
+                _: Date.now()
+            },
+            headers
+        });
+
+        // 4. 获取NIM Token
         console.log('获取NIM Token...');
         const loginResponse = await api.get('https://u.tuwan.com/Netease/login', {
             params: {
@@ -154,23 +177,20 @@ async function joinRoom() {
         }
 
         globalState.nimToken = loginData.token;
-        console.log('成功获取NIM Token');
 
-        // 4. 获取房间列表
-        console.log('获取房间列表...');
-        await api.get('https://papi.tuwan.com/Chatroom/getPcListV4', {
+        // 5. 初始化房间连接
+        console.log('初始化房间连接...');
+        await api.get('https://papi.tuwan.com/Agora/webinfo', {
             params: {
-                ver: '14',
-                format: 'jsonp',
-                navid: '0',
-                cid: globalState.roomId,
+                apiver: '6',
+                channel: globalState.roomId,
                 callback: generateCallback(),
                 _: Date.now()
             },
             headers
         });
 
-        // 5. 加入房间
+        // 6. 加入房间
         console.log('发送加入房间请求...');
         await api.post('https://app-diandian-report.tuwan.com/', 
             qs.stringify({
@@ -185,8 +205,7 @@ async function joinRoom() {
             { headers }
         );
 
-        // 6. 更新房间成员列表
-        console.log('更新房间成员列表...');
+        // 7. 更新房间成员列表
         await api.get('https://papi.tuwan.com/Chatroom/getuserinfo', {
             params: {
                 requestfrom: 'addChannelUsers',
@@ -197,8 +216,7 @@ async function joinRoom() {
             headers
         });
 
-        // 7. 初始化在线状态
-        console.log('初始化在线状态...');
+        // 8. 更新在线状态
         await api.post('https://app-diandian-report.tuwan.com/', 
             qs.stringify({
                 roomId: globalState.roomId,
@@ -301,7 +319,7 @@ function startHeartbeat() {
     }, CONFIG.HEARTBEAT_INTERVAL);
 }
 
-// API路由：更新配置
+// API路由实现
 app.post('/api/update-config', async (req, res) => {
     const { roomId, cookie } = req.body;
     
@@ -342,7 +360,6 @@ app.post('/api/update-config', async (req, res) => {
     }
 });
 
-// API路由：获取状态
 app.get('/api/status', (req, res) => {
     res.json({
         isConnected: globalState.isConnected,
@@ -357,7 +374,6 @@ app.get('/api/status', (req, res) => {
     });
 });
 
-// API路由：健康检查
 app.get('/health', (req, res) => {
     res.json({ 
         status: 'ok', 
@@ -365,7 +381,6 @@ app.get('/health', (req, res) => {
     });
 });
 
-// 启动服务器
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
     console.log(`服务器启动成功，监听端口 ${PORT}`);
