@@ -5,20 +5,17 @@ const qs = require('qs');
 
 const app = express();
 
-// 中间件配置
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, '../public')));
 
-// 系统配置常量
 const CONFIG = {
-    USER_AGENT: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36',
+    USER_AGENT: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
     NIM_APP_KEY: '712eb79f6472f09e9d8f19aecba1cf43',
     HEARTBEAT_INTERVAL: 30000,
     MAX_RETRIES: 3
 };
 
-// 全局状态管理
 const globalState = {
     cookie: '',
     roomId: '',
@@ -34,7 +31,6 @@ const globalState = {
     heartbeatInterval: null
 };
 
-// 创建axios实例
 const api = axios.create({
     timeout: 10000,
     headers: {
@@ -45,51 +41,79 @@ const api = axios.create({
     }
 });
 
-// 生成回调标识符
 function generateCallback() {
     return `jQuery${Math.random().toString().slice(2)}_${Date.now()}`;
 }
 
-// 解析JSONP响应
 function parseJsonp(response) {
     try {
         if (!response?.data) {
-            console.error('Empty JSONP response');
+            console.error('JSONP响应为空');
             return null;
         }
 
-        // 处理jQuery回调格式
-        const match = response.data.match(/(?:jQuery[0-9_]+\(|\()(.+?)(?:\);?|$)/);
+        const data = response.data.trim();
+        const match = data.match(/(?:jQuery[0-9_]+\(|\()(.+?)(?:\))?$/);
         if (!match?.[1]) {
-            console.error('Invalid JSONP format:', response.data);
+            console.error('JSONP格式无效:', data);
             return null;
         }
 
         const jsonData = JSON.parse(match[1]);
-        console.log('Parsed JSONP data:', jsonData);
+        console.log('解析JSONP数据:', jsonData);
         return jsonData;
     } catch (error) {
-        console.error('JSONP parsing error:', error, 'Raw response:', response.data);
+        console.error('JSONP解析错误:', error, '原始数据:', response.data);
         return null;
     }
 }
 
-// 从Cookie中提取Passport值
-function extractPassportFromCookie(cookie) {
-    const match = cookie.match(/Tuwan_Passport=([^;]+)/);
-    return match?.[1] || null;
+async function getUserInfo(headers) {
+    try {
+        console.log('开始获取用户信息...');
+        
+        const userInfoResponse = await api.get('https://papi.tuwan.com/Chatroom/getuserinfo', {
+            params: {
+                requestfrom: 'selflogin',
+                callback: generateCallback(),
+                _: Date.now(),
+                t: Date.now()
+            },
+            headers: {
+                ...headers,
+                'Referer': 'https://y.tuwan.com/',
+                'Cache-Control': 'no-cache',
+                'Pragma': 'no-cache'
+            }
+        });
+
+        console.log('用户信息原始响应:', userInfoResponse.data);
+        
+        const userInfoData = parseJsonp(userInfoResponse);
+        if (!userInfoData || userInfoData.error !== 0) {
+            throw new Error('用户验证失败');
+        }
+
+        if (!userInfoData.data?.[0]?.uid) {
+            throw new Error('用户数据格式无效');
+        }
+
+        return {
+            success: true,
+            data: userInfoData.data[0]
+        };
+    } catch (error) {
+        console.error('获取用户信息失败:', error);
+        return {
+            success: false,
+            error: error.message
+        };
+    }
 }
 
-// 进房流程实现
 async function joinRoom() {
     if (!globalState.cookie || !globalState.roomId) {
         throw new Error('缺少必要的配置信息');
-    }
-
-    // 从Cookie中提取Passport
-    globalState.passportValue = extractPassportFromCookie(globalState.cookie);
-    if (!globalState.passportValue) {
-        throw new Error('无法获取登录凭证');
     }
 
     const headers = {
@@ -97,58 +121,28 @@ async function joinRoom() {
         'Accept': '*/*',
         'Accept-Language': 'zh-CN,zh;q=0.9',
         'Cookie': globalState.cookie,
-        'Referer': `https://y.tuwan.com/chatroom/${globalState.roomId}`,
+        'Referer': 'https://y.tuwan.com/',
         'Origin': 'https://y.tuwan.com',
         'Cache-Control': 'no-cache',
         'Pragma': 'no-cache'
     };
 
     try {
-        // 1. TGID验证
-        console.log('执行TGID验证...');
-        await api.get('https://y.tuwan.com/sendTGID.ashx', {
-            params: {
-                callback: 'console.log',
-                _: Date.now()
-            },
-            headers: {
-                ...headers,
-                'Referer': 'https://y.tuwan.com/'
-            }
-        });
-
-        // 2. 获取用户信息
-        console.log('获取用户信息...');
-        const userInfoResponse = await api.get('https://papi.tuwan.com/Chatroom/getuserinfo', {
-            params: {
-                requestfrom: 'selflogin',
-                callback: generateCallback(),
-                _: Date.now()
-            },
-            headers: {
-                ...headers,
-                'Referer': 'https://y.tuwan.com/'
-            }
-        });
-
-        const userInfoData = parseJsonp(userInfoResponse);
-        console.log('User info response:', userInfoData);
-
-        if (!userInfoData?.data?.[0]?.uid) {
-            console.error('Invalid user information:', userInfoData);
-            throw new Error('获取用户信息失败');
+        // 获取用户信息
+        const userResult = await getUserInfo(headers);
+        if (!userResult.success) {
+            throw new Error('获取用户信息失败: ' + userResult.error);
         }
 
-        globalState.userId = userInfoData.data[0].uid;
-        globalState.nickname = userInfoData.data[0].nickname;
+        globalState.userId = userResult.data.uid;
+        globalState.nickname = userResult.data.nickname;
 
         console.log('用户信息获取成功:', {
             userId: globalState.userId,
             nickname: globalState.nickname
         });
 
-        // 3. 获取房间列表
-        console.log('获取房间列表...');
+        // 获取房间列表
         await api.get('https://papi.tuwan.com/Chatroom/getPcListV4', {
             params: {
                 ver: '14',
@@ -158,40 +152,32 @@ async function joinRoom() {
                 callback: generateCallback(),
                 _: Date.now()
             },
-            headers
+            headers: {
+                ...headers,
+                'Referer': `https://y.tuwan.com/chatroom/${globalState.roomId}`
+            }
         });
 
-        // 4. 获取NIM Token
-        console.log('获取NIM Token...');
+        // 获取NIM Token
         const loginResponse = await api.get('https://u.tuwan.com/Netease/login', {
             params: {
                 callback: generateCallback(),
                 _: Date.now()
             },
-            headers
+            headers: {
+                ...headers,
+                'Referer': `https://y.tuwan.com/chatroom/${globalState.roomId}`
+            }
         });
 
         const loginData = parseJsonp(loginResponse);
         if (!loginData?.token) {
-            throw new Error('获取NIM Token失败');
+            throw new Error('获取登录令牌失败');
         }
 
         globalState.nimToken = loginData.token;
 
-        // 5. 初始化房间连接
-        console.log('初始化房间连接...');
-        await api.get('https://papi.tuwan.com/Agora/webinfo', {
-            params: {
-                apiver: '6',
-                channel: globalState.roomId,
-                callback: generateCallback(),
-                _: Date.now()
-            },
-            headers
-        });
-
-        // 6. 加入房间
-        console.log('发送加入房间请求...');
+        // 初始化房间
         await api.post('https://app-diandian-report.tuwan.com/', 
             qs.stringify({
                 roomId: globalState.roomId,
@@ -199,24 +185,18 @@ async function joinRoom() {
                 action: 'joinRoom',
                 platform: 'web',
                 timestamp: Date.now(),
-                token: globalState.nimToken,
-                passportValue: globalState.passportValue
+                token: globalState.nimToken
             }),
-            { headers }
+            { 
+                headers: {
+                    ...headers,
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                    'Referer': `https://y.tuwan.com/chatroom/${globalState.roomId}`
+                } 
+            }
         );
 
-        // 7. 更新房间成员列表
-        await api.get('https://papi.tuwan.com/Chatroom/getuserinfo', {
-            params: {
-                requestfrom: 'addChannelUsers',
-                uids: globalState.userId,
-                callback: generateCallback(),
-                _: Date.now()
-            },
-            headers
-        });
-
-        // 8. 更新在线状态
+        // 更新在线状态
         await api.post('https://app-diandian-report.tuwan.com/', 
             qs.stringify({
                 roomId: globalState.roomId,
@@ -224,7 +204,13 @@ async function joinRoom() {
                 status: 'online',
                 timestamp: Date.now()
             }),
-            { headers }
+            { 
+                headers: {
+                    ...headers,
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                    'Referer': `https://y.tuwan.com/chatroom/${globalState.roomId}`
+                }
+            }
         );
 
         console.log('进房流程完成');
@@ -234,26 +220,24 @@ async function joinRoom() {
         return true;
 
     } catch (error) {
-        console.error('进房流程出错:', error?.response?.data || error.message);
+        console.error('进房流程出错:', error);
         throw error;
     }
 }
 
-// 心跳包实现
 async function sendHeartbeat() {
     if (!globalState.isConnected) {
-        console.log('未连接，跳过心跳');
         return false;
     }
 
     const headers = {
+        'User-Agent': CONFIG.USER_AGENT,
         'Cookie': globalState.cookie,
         'Referer': `https://y.tuwan.com/chatroom/${globalState.roomId}`,
         'Origin': 'https://y.tuwan.com'
     };
 
     try {
-        // 1. 活动心跳
         await api.get('https://activity.tuwan.com/Activitymanagement/activity', {
             params: {
                 cid: globalState.roomId,
@@ -264,7 +248,6 @@ async function sendHeartbeat() {
             headers
         });
 
-        // 2. 状态上报
         await api.post('https://app-diandian-report.tuwan.com/', 
             qs.stringify({
                 roomId: globalState.roomId,
@@ -272,18 +255,22 @@ async function sendHeartbeat() {
                 status: 'online',
                 timestamp: Date.now()
             }),
-            { headers }
+            { 
+                headers: {
+                    ...headers,
+                    'Content-Type': 'application/x-www-form-urlencoded'
+                }
+            }
         );
 
         globalState.lastHeartbeat = new Date();
         globalState.lastReport = new Date();
         return true;
     } catch (error) {
-        console.error('心跳发送失败:', error.message);
+        console.error('心跳发送失败:', error);
         globalState.retryCount++;
         
         if (globalState.retryCount >= CONFIG.MAX_RETRIES) {
-            console.log('心跳失败次数过多，尝试重新进房...');
             await reconnect();
         }
         
@@ -291,7 +278,6 @@ async function sendHeartbeat() {
     }
 }
 
-// 重连机制实现
 async function reconnect() {
     console.log('开始重新连接...');
     globalState.isConnected = false;
@@ -302,12 +288,11 @@ async function reconnect() {
         console.log('重新连接成功');
         globalState.retryCount = 0;
     } catch (error) {
-        console.error('重新连接失败:', error.message);
+        console.error('重新连接失败:', error);
         throw error;
     }
 }
 
-// 启动心跳
 function startHeartbeat() {
     if (globalState.heartbeatInterval) {
         clearInterval(globalState.heartbeatInterval);
@@ -319,7 +304,6 @@ function startHeartbeat() {
     }, CONFIG.HEARTBEAT_INTERVAL);
 }
 
-// API路由实现
 app.post('/api/update-config', async (req, res) => {
     const { roomId, cookie } = req.body;
     
