@@ -5,10 +5,18 @@ const qs = require('qs');
 
 const app = express();
 
-// 中间件配置
+// 基础中间件配置
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, '../public')));
+
+// 系统配置常量
+const CONFIG = {
+    USER_AGENT: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36',
+    NIM_APP_KEY: '712eb79f6472f09e9d8f19aecba1cf43',
+    HEARTBEAT_INTERVAL: 30000,
+    MAX_RETRIES: 3
+};
 
 // 全局状态管理
 const globalState = {
@@ -16,21 +24,21 @@ const globalState = {
     roomId: '',
     userId: '',
     nickname: '',
-    neteaseToken: '',
+    nimToken: '',
+    passportValue: '',
     lastHeartbeat: null,
     lastReport: null,
     isConnected: false,
     startTime: new Date(),
     retryCount: 0,
-    maxRetries: 3,
     heartbeatInterval: null
 };
 
-// 创建axios实例
+// 创建axios实例并设置默认配置
 const api = axios.create({
     timeout: 10000,
     headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36',
+        'User-Agent': CONFIG.USER_AGENT,
         'Accept': '*/*',
         'Accept-Language': 'zh-CN,zh;q=0.9',
         'Accept-Encoding': 'gzip, deflate, br',
@@ -40,46 +48,52 @@ const api = axios.create({
     }
 });
 
-// 生成jQuery回调标识符
+// 工具函数：生成jQuery回调标识符
 function generateCallback() {
     return `jQuery${Math.random().toString().slice(2)}_${Date.now()}`;
 }
 
-// JSONP响应解析
+// 工具函数：解析JSONP响应
 function parseJsonp(response) {
     try {
-        if (!response || !response.data) {
+        if (!response?.data) {
             console.error('JSONP响应为空');
             return null;
         }
 
-        const match = response.data.match(/\((.*)\)/);
-        if (!match || !match[1]) {
-            console.error('JSONP格式解析失败');
+        const match = response.data.match(/\((.*?)\)/);
+        if (!match?.[1]) {
+            console.error('JSONP格式解析失败:', response.data);
             return null;
         }
 
-        const jsonData = JSON.parse(match[1]);
-        if (typeof jsonData !== 'object') {
-            console.error('JSONP响应不是有效的对象');
-            return null;
-        }
-
-        return jsonData;
+        return JSON.parse(match[1]);
     } catch (error) {
-        console.error('JSONP解析错误:', error);
+        console.error('JSONP解析错误:', error, '原始数据:', response.data);
         return null;
     }
 }
 
-// 完整的进房流程实现
+// 工具函数：从Cookie中提取Passport值
+function extractPassportFromCookie(cookie) {
+    const match = cookie.match(/Tuwan_Passport=([^;]+)/);
+    return match?.[1] || null;
+}
+
+// 主要进房流程实现
 async function joinRoom() {
     if (!globalState.cookie || !globalState.roomId) {
         throw new Error('缺少必要的配置信息');
     }
 
+    // 提取Passport值
+    globalState.passportValue = extractPassportFromCookie(globalState.cookie);
+    if (!globalState.passportValue) {
+        throw new Error('无法获取登录凭证');
+    }
+
     const headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36',
+        'User-Agent': CONFIG.USER_AGENT,
         'Accept': '*/*',
         'Accept-Language': 'zh-CN,zh;q=0.9',
         'Cookie': globalState.cookie,
@@ -88,7 +102,20 @@ async function joinRoom() {
     };
 
     try {
-        // 1. 获取用户信息
+        // 1. TGID验证
+        console.log('执行TGID验证...');
+        const tgidResponse = await api.get('https://y.tuwan.com/sendTGID.ashx', {
+            params: {
+                callback: 'console.log',
+                _: Date.now()
+            },
+            headers: {
+                ...headers,
+                'Referer': 'https://y.tuwan.com/'
+            }
+        });
+
+        // 2. 获取用户信息
         console.log('获取用户信息...');
         const userInfoResponse = await api.get('https://papi.tuwan.com/Chatroom/getuserinfo', {
             params: {
@@ -103,24 +130,34 @@ async function joinRoom() {
         });
 
         const userInfoData = parseJsonp(userInfoResponse);
-        console.log('用户信息响应:', userInfoData);
-
-        if (!userInfoData || userInfoData.error !== 0 || !userInfoData.data || !userInfoData.data[0]) {
-            console.error('用户信息解析失败:', userInfoData);
+        if (!userInfoData?.data?.[0]?.uid) {
+            console.error('用户信息响应:', userInfoData);
             throw new Error('获取用户信息失败');
         }
 
-        const userData = userInfoData.data[0];
-        globalState.userId = userData.uid;
-        globalState.nickname = userData.nickname;
+        globalState.userId = userInfoData.data[0].uid;
+        globalState.nickname = userInfoData.data[0].nickname;
 
-        console.log('成功获取用户信息:', {
-            userId: globalState.userId,
-            nickname: globalState.nickname
+        // 3. 获取NIM Token
+        console.log('获取NIM Token...');
+        const loginResponse = await api.get('https://u.tuwan.com/Netease/login', {
+            params: {
+                callback: generateCallback(),
+                _: Date.now()
+            },
+            headers
         });
 
-        // 2. 获取房间信息
-        console.log('获取房间信息...');
+        const loginData = parseJsonp(loginResponse);
+        if (!loginData?.token) {
+            throw new Error('获取NIM Token失败');
+        }
+
+        globalState.nimToken = loginData.token;
+        console.log('成功获取NIM Token');
+
+        // 4. 获取房间列表
+        console.log('获取房间列表...');
         await api.get('https://papi.tuwan.com/Chatroom/getPcListV4', {
             params: {
                 ver: '14',
@@ -133,36 +170,6 @@ async function joinRoom() {
             headers
         });
 
-        // 3. 获取声网配置
-        console.log('获取声网配置...');
-        await api.get('https://papi.tuwan.com/Agora/webinfo', {
-            params: {
-                apiver: '6',
-                channel: globalState.roomId,
-                callback: generateCallback(),
-                _: Date.now()
-            },
-            headers
-        });
-
-        // 4. 获取登录令牌
-        console.log('获取登录令牌...');
-        const loginResponse = await api.get('https://u.tuwan.com/Netease/login', {
-            params: {
-                callback: generateCallback(),
-                _: Date.now()
-            },
-            headers
-        });
-
-        const loginData = parseJsonp(loginResponse);
-        if (!loginData || loginData.error !== 0 || !loginData.token) {
-            throw new Error('登录令牌获取失败');
-        }
-
-        globalState.neteaseToken = loginData.token;
-        console.log('登录令牌获取成功:', globalState.neteaseToken);
-
         // 5. 加入房间
         console.log('发送加入房间请求...');
         await api.post('https://app-diandian-report.tuwan.com/', 
@@ -172,12 +179,14 @@ async function joinRoom() {
                 action: 'joinRoom',
                 platform: 'web',
                 timestamp: Date.now(),
-                token: globalState.neteaseToken
+                token: globalState.nimToken,
+                passportValue: globalState.passportValue
             }),
             { headers }
         );
 
-        // 6. 触发用户列表更新
+        // 6. 更新房间成员列表
+        console.log('更新房间成员列表...');
         await api.get('https://papi.tuwan.com/Chatroom/getuserinfo', {
             params: {
                 requestfrom: 'addChannelUsers',
@@ -188,8 +197,8 @@ async function joinRoom() {
             headers
         });
 
-        // 7. 更新在线状态
-        console.log('更新在线状态...');
+        // 7. 初始化在线状态
+        console.log('初始化在线状态...');
         await api.post('https://app-diandian-report.tuwan.com/', 
             qs.stringify({
                 roomId: globalState.roomId,
@@ -205,13 +214,14 @@ async function joinRoom() {
         globalState.retryCount = 0;
         startHeartbeat();
         return true;
+
     } catch (error) {
-        console.error('进房流程出错:', error);
+        console.error('进房流程出错:', error?.response?.data || error.message);
         throw error;
     }
 }
 
-// 心跳包发送实现
+// 心跳包实现
 async function sendHeartbeat() {
     if (!globalState.isConnected) {
         console.log('未连接，跳过心跳');
@@ -225,7 +235,7 @@ async function sendHeartbeat() {
     };
 
     try {
-        // 1. 发送活动心跳
+        // 1. 活动心跳
         await api.get('https://activity.tuwan.com/Activitymanagement/activity', {
             params: {
                 cid: globalState.roomId,
@@ -236,7 +246,7 @@ async function sendHeartbeat() {
             headers
         });
 
-        // 2. 更新在线状态
+        // 2. 状态上报
         await api.post('https://app-diandian-report.tuwan.com/', 
             qs.stringify({
                 roomId: globalState.roomId,
@@ -251,10 +261,10 @@ async function sendHeartbeat() {
         globalState.lastReport = new Date();
         return true;
     } catch (error) {
-        console.error('心跳发送失败:', error);
+        console.error('心跳发送失败:', error.message);
         globalState.retryCount++;
         
-        if (globalState.retryCount >= globalState.maxRetries) {
+        if (globalState.retryCount >= CONFIG.MAX_RETRIES) {
             console.log('心跳失败次数过多，尝试重新进房...');
             await reconnect();
         }
@@ -274,7 +284,7 @@ async function reconnect() {
         console.log('重新连接成功');
         globalState.retryCount = 0;
     } catch (error) {
-        console.error('重新连接失败:', error);
+        console.error('重新连接失败:', error.message);
         throw error;
     }
 }
@@ -288,10 +298,10 @@ function startHeartbeat() {
     sendHeartbeat().catch(console.error);
     globalState.heartbeatInterval = setInterval(() => {
         sendHeartbeat().catch(console.error);
-    }, 30000);
+    }, CONFIG.HEARTBEAT_INTERVAL);
 }
 
-// API路由实现
+// API路由：更新配置
 app.post('/api/update-config', async (req, res) => {
     const { roomId, cookie } = req.body;
     
@@ -332,6 +342,7 @@ app.post('/api/update-config', async (req, res) => {
     }
 });
 
+// API路由：获取状态
 app.get('/api/status', (req, res) => {
     res.json({
         isConnected: globalState.isConnected,
@@ -346,6 +357,7 @@ app.get('/api/status', (req, res) => {
     });
 });
 
+// API路由：健康检查
 app.get('/health', (req, res) => {
     res.json({ 
         status: 'ok', 
@@ -353,6 +365,7 @@ app.get('/health', (req, res) => {
     });
 });
 
+// 启动服务器
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
     console.log(`服务器启动成功，监听端口 ${PORT}`);

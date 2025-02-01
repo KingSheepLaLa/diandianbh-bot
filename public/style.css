@@ -1,4 +1,4 @@
-/* 基础样式重置 */
+/* 基础样式重置与默认字体设置 */
 * {
     margin: 0;
     padding: 0;
@@ -7,12 +7,15 @@
 
 body {
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
 }
 
-/* 日志容器样式 */
+/* 日志容器样式优化 */
 #logContainer {
     background-color: #f8fafc;
     transition: background-color 0.3s ease;
+    border: 1px solid #e2e8f0;
 }
 
 #logContainer::-webkit-scrollbar {
@@ -34,13 +37,14 @@ body {
     background: #64748b;
 }
 
-/* 日志条目样式 */
+/* 日志条目样式设计 */
 .log-entry {
     padding: 6px 8px;
     margin-bottom: 4px;
     border-radius: 4px;
     transition: all 0.2s ease;
     animation: fadeIn 0.3s ease;
+    border-left: 3px solid transparent;
 }
 
 .log-entry:last-child {
@@ -61,15 +65,13 @@ body {
 .log-error {
     color: #dc2626;
     background-color: #fef2f2;
-    border-left: 3px solid #dc2626;
-    padding-left: 12px;
+    border-left-color: #dc2626;
 }
 
 .log-success {
     color: #059669;
     background-color: #f0fdf4;
-    border-left: 3px solid #059669;
-    padding-left: 12px;
+    border-left-color: #059669;
 }
 
 /* 连接状态指示器 */
@@ -92,7 +94,7 @@ body {
     animation: blink 1s infinite;
 }
 
-/* 表单元素样式 */
+/* 表单元素样式优化 */
 input:focus, textarea:focus {
     outline: none;
     border-color: #3b82f6;
@@ -102,39 +104,7 @@ input:focus, textarea:focus {
 textarea {
     font-family: 'JetBrains Mono', monospace;
     resize: vertical;
-}
-
-/* 加载状态动画 */
-@keyframes pulse {
-    0% {
-        box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.4);
-    }
-    70% {
-        box-shadow: 0 0 0 10px rgba(16, 185, 129, 0);
-    }
-    100% {
-        box-shadow: 0 0 0 0 rgba(16, 185, 129, 0);
-    }
-}
-
-@keyframes blink {
-    0%, 100% {
-        opacity: 1;
-    }
-    50% {
-        opacity: 0.5;
-    }
-}
-
-@keyframes fadeIn {
-    from {
-        opacity: 0;
-        transform: translateY(-10px);
-    }
-    to {
-        opacity: 1;
-        transform: translateY(0);
-    }
+    min-height: 80px;
 }
 
 /* 按钮状态样式 */
@@ -172,27 +142,50 @@ button {
     color: #dc2626;
 }
 
-/* 响应式调整 */
-@media (max-width: 640px) {
-    .container {
-        padding-left: 1rem;
-        padding-right: 1rem;
-    }
+/* 卡片容器阴影效果 */
+.card {
+    box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06);
+    transition: box-shadow 0.3s ease;
+}
 
-    h1 {
-        font-size: 1.5rem;
-    }
+.card:hover {
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+}
 
-    h2 {
-        font-size: 1.25rem;
+/* 动画效果定义 */
+@keyframes pulse {
+    0% {
+        box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.4);
     }
-
-    .grid {
-        grid-template-columns: 1fr;
+    70% {
+        box-shadow: 0 0 0 10px rgba(16, 185, 129, 0);
+    }
+    100% {
+        box-shadow: 0 0 0 0 rgba(16, 185, 129, 0);
     }
 }
 
-/* 动画效果 */
+@keyframes blink {
+    0%, 100% {
+        opacity: 1;
+    }
+    50% {
+        opacity: 0.5;
+    }
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(-10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* 加载状态动画 */
 .loading {
     position: relative;
     pointer-events: none;
@@ -220,5 +213,25 @@ button {
     }
     100% {
         transform: translateX(100%);
+    }
+}
+
+/* 响应式设计调整 */
+@media (max-width: 640px) {
+    .container {
+        padding-left: 1rem;
+        padding-right: 1rem;
+    }
+
+    h1 {
+        font-size: 1.5rem;
+    }
+
+    h2 {
+        font-size: 1.25rem;
+    }
+
+    .grid {
+        grid-template-columns: 1fr;
     }
 }

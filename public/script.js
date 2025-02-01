@@ -9,37 +9,6 @@ const state = {
     userId: null
 };
 
-// 工具函数：格式化时间显示
-function formatTime(date) {
-    if (!date) return '-';
-    return new Date(date).toLocaleString('zh-CN', {
-        hour12: false,
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit',
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit'
-    });
-}
-
-// 工具函数：格式化运行时长
-function formatUptime(milliseconds) {
-    const seconds = Math.floor(milliseconds / 1000);
-    const minutes = Math.floor(seconds / 60);
-    const hours = Math.floor(minutes / 60);
-    const days = Math.floor(hours / 24);
-
-    if (days > 0) {
-        return `${days}天${hours % 24}小时${minutes % 60}分钟`;
-    }
-    if (hours > 0) {
-        return `${hours}小时${minutes % 60}分钟`;
-    }
-    return `${minutes}分钟`;
-}
-
-// 日志管理器
 class LogManager {
     constructor(containerId, maxEntries = 100) {
         this.container = document.getElementById(containerId);
@@ -63,7 +32,6 @@ class LogManager {
 
         this.container.insertBefore(entry, this.container.firstChild);
 
-        // 维护日志数量上限
         while (this.container.children.length > this.maxEntries) {
             this.container.removeChild(this.container.lastChild);
         }
@@ -77,13 +45,12 @@ class LogManager {
     }
 }
 
-// UI管理器
 class UIManager {
     constructor() {
-        // 获取所有UI元素引用
         this.elements = {
             currentRoom: document.getElementById('currentRoom'),
             userId: document.getElementById('userId'),
+            nickname: document.getElementById('nickname'),
             connectionStatus: document.getElementById('connectionStatus'),
             connectionIndicator: document.getElementById('connectionIndicator'),
             lastHeartbeat: document.getElementById('lastHeartbeat'),
@@ -92,11 +59,40 @@ class UIManager {
             systemTime: document.getElementById('systemTime'),
             systemStatus: document.getElementById('systemStatus'),
             retryCount: document.getElementById('retryCount'),
+            startTime: document.getElementById('startTime'),
             configForm: document.getElementById('configForm'),
             clearLogsButton: document.getElementById('clearLogs')
         };
 
         this.logger = new LogManager('logContainer');
+    }
+
+    formatTime(date) {
+        if (!date) return '-';
+        return new Date(date).toLocaleString('zh-CN', {
+            hour12: false,
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit'
+        });
+    }
+
+    formatUptime(milliseconds) {
+        const seconds = Math.floor(milliseconds / 1000);
+        const minutes = Math.floor(seconds / 60);
+        const hours = Math.floor(minutes / 60);
+        const days = Math.floor(hours / 24);
+
+        if (days > 0) {
+            return `${days}天${hours % 24}小时${minutes % 60}分钟`;
+        }
+        if (hours > 0) {
+            return `${hours}小时${minutes % 60}分钟`;
+        }
+        return `${minutes}分钟`;
     }
 
     updateConnectionStatus(isConnected, message = '') {
@@ -114,15 +110,15 @@ class UIManager {
 
         this.elements.currentRoom.textContent = status.roomId || '-';
         this.elements.userId.textContent = status.userId || '-';
-        this.elements.lastHeartbeat.textContent = formatTime(status.lastHeartbeat);
-        this.elements.lastReport.textContent = formatTime(status.lastReport);
-        this.elements.uptime.textContent = formatUptime(Date.now() - new Date(status.startTime).getTime());
+        this.elements.nickname.textContent = status.nickname || '-';
+        this.elements.lastHeartbeat.textContent = this.formatTime(status.lastHeartbeat);
+        this.elements.lastReport.textContent = this.formatTime(status.lastReport);
+        this.elements.uptime.textContent = this.formatUptime(Date.now() - new Date(status.startTime).getTime());
         this.elements.retryCount.textContent = status.retryCount;
+        this.elements.startTime.textContent = this.formatTime(status.startTime);
 
-        // 更新连接状态显示
         this.updateConnectionStatus(status.isConnected);
 
-        // 更新系统状态
         const systemStatusClass = status.isConnected ? 'system-status-normal' : 'system-status-error';
         this.elements.systemStatus.className = `system-status ${systemStatusClass}`;
         this.elements.systemStatus.textContent = status.isConnected ? '正常' : '异常';
@@ -154,7 +150,6 @@ class UIManager {
     }
 }
 
-// API管理器
 class APIManager {
     constructor(baseUrl = '') {
         this.baseUrl = baseUrl;
@@ -191,7 +186,6 @@ class APIManager {
     }
 }
 
-// 应用主类
 class App {
     constructor() {
         this.ui = new UIManager();
@@ -201,7 +195,6 @@ class App {
     }
 
     setupEventListeners() {
-        // 配置表单提交处理
         this.ui.elements.configForm.addEventListener('submit', async (e) => {
             e.preventDefault();
             this.ui.showLoading(true);
@@ -219,7 +212,6 @@ class App {
                 this.ui.showSuccess(`连接成功: ${result.message}`);
                 state.isConnected = true;
 
-                // 立即更新状态显示
                 await this.updateStatus();
             } catch (error) {
                 this.ui.showError(`连接失败: ${error.message}`);
@@ -229,7 +221,6 @@ class App {
             }
         });
 
-        // 清除日志按钮点击处理
         this.ui.elements.clearLogsButton.addEventListener('click', () => {
             this.ui.logger.clear();
         });
@@ -252,19 +243,16 @@ class App {
     }
 
     startStatusUpdates() {
-        // 更新系统时间显示
         this.ui.updateSystemTime();
         setInterval(() => this.ui.updateSystemTime(), 1000);
 
-        // 定期更新状态信息
         this.updateStatus();
         setInterval(() => this.updateStatus(), 30000);
     }
 }
 
-// 在页面加载完成后初始化应用
+// 初始化应用
 document.addEventListener('DOMContentLoaded', () => {
     const app = new App();
-    // 执行初始状态更新
     app.updateStatus().catch(console.error);
 });
