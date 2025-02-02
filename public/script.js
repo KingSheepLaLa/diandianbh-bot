@@ -1,34 +1,35 @@
-// 状态管理
-const state = {
-    isConnected: false,
-    lastUpdate: null,
-    updateInterval: null,
-    retryAttempts: 0,
-    maxRetries: 3,
-    roomId: null,
-    userId: null
-};
-
-class LogManager {
+class Logger {
     constructor(containerId, maxEntries = 100) {
         this.container = document.getElementById(containerId);
         this.maxEntries = maxEntries;
     }
 
-    add(message, type = 'info') {
+    add(message, type = 'info', details = null) {
         const entry = document.createElement('div');
-        entry.className = `log-entry ${type === 'error' ? 'log-error' : type === 'success' ? 'log-success' : ''}`;
+        entry.className = 'log-entry';
 
         const timestamp = document.createElement('span');
         timestamp.className = 'log-timestamp';
         timestamp.textContent = new Date().toLocaleTimeString('zh-CN', { hour12: false });
+
+        const typeIndicator = document.createElement('span');
+        typeIndicator.className = `log-type log-type-${type}`;
+        typeIndicator.textContent = type.toUpperCase();
 
         const content = document.createElement('span');
         content.className = 'log-content';
         content.textContent = message;
 
         entry.appendChild(timestamp);
+        entry.appendChild(typeIndicator);
         entry.appendChild(content);
+
+        if (details) {
+            const detailsElement = document.createElement('pre');
+            detailsElement.className = 'log-details';
+            detailsElement.textContent = typeof details === 'string' ? details : JSON.stringify(details, null, 2);
+            entry.appendChild(detailsElement);
+        }
 
         this.container.insertBefore(entry, this.container.firstChild);
 
@@ -45,12 +46,70 @@ class LogManager {
     }
 }
 
+class ConnectionStepsManager {
+    constructor(containerId) {
+        this.container = document.getElementById(containerId);
+        this.steps = {
+            baseUrl: '获取基础配置',
+            userInfo: '获取用户信息',
+            roomInfo: '获取房间信息',
+            nimToken: '获取登录令牌',
+            roomJoin: '加入房间'
+        };
+    }
+
+    updateStep(stepId, status, error = null) {
+        const stepElement = this.container.querySelector(`[data-step="${stepId}"]`) || this.createStepElement(stepId);
+        
+        stepElement.className = `connection-step step-${status}`;
+        const statusText = status === 'complete' ? '完成' : status === 'error' ? '失败' : '等待中';
+        stepElement.querySelector('.step-status').textContent = statusText;
+        
+        if (error) {
+            const errorElement = document.createElement('div');
+            errorElement.className = 'text-red-600 text-sm mt-1';
+            errorElement.textContent = error;
+            stepElement.appendChild(errorElement);
+        }
+    }
+
+    createStepElement(stepId) {
+        const element = document.createElement('div');
+        element.className = 'connection-step';
+        element.dataset.step = stepId;
+
+        const content = document.createElement('div');
+        content.className = 'flex items-center justify-between w-full';
+
+        const nameSpan = document.createElement('span');
+        nameSpan.textContent = this.steps[stepId];
+
+        const statusSpan = document.createElement('span');
+        statusSpan.className = 'step-status';
+        statusSpan.textContent = '等待中';
+
+        content.appendChild(nameSpan);
+        content.appendChild(statusSpan);
+        element.appendChild(content);
+
+        this.container.appendChild(element);
+        return element;
+    }
+
+    reset() {
+        this.container.innerHTML = '';
+        Object.keys(this.steps).forEach(stepId => {
+            this.updateStep(stepId, 'pending');
+        });
+    }
+}
+
 class UIManager {
     constructor() {
         this.elements = {
             currentRoom: document.getElementById('currentRoom'),
-            userId: document.getElementById('userId'),
             nickname: document.getElementById('nickname'),
+            userId: document.getElementById('userId'),
             connectionStatus: document.getElementById('connectionStatus'),
             connectionIndicator: document.getElementById('connectionIndicator'),
             lastHeartbeat: document.getElementById('lastHeartbeat'),
@@ -64,7 +123,46 @@ class UIManager {
             clearLogsButton: document.getElementById('clearLogs')
         };
 
-        this.logger = new LogManager('logContainer');
+        this.logger = new Logger('logContainer');
+        this.stepsManager = new ConnectionStepsManager('connectionSteps');
+    }
+
+    updateConnectionStatus(status) {
+        this.elements.connectionIndicator.className = `status-indicator status-${status}`;
+        this.elements.connectionStatus.textContent = 
+            status === 'connected' ? '已连接' : 
+            status === 'connecting' ? '连接中' : '未连接';
+        
+        this.elements.systemStatus.textContent = status === 'connected' ? '正常' : '异常';
+        this.elements.systemStatus.className = 
+            `font-medium ${status === 'connected' ? 'text-green-600' : 'text-red-600'}`;
+    }
+
+    updateStatus(status) {
+        if (!status) return;
+
+        this.elements.currentRoom.textContent = status.roomId || '-';
+        this.elements.nickname.textContent = status.nickname || '-';
+        this.elements.userId.textContent = status.userId || '-';
+        this.elements.lastHeartbeat.textContent = this.formatTime(status.lastHeartbeat);
+        this.elements.lastReport.textContent = this.formatTime(status.lastReport);
+        this.elements.uptime.textContent = this.formatUptime(Date.now() - new Date(status.startTime).getTime());
+        this.elements.retryCount.textContent = status.retryCount;
+        this.elements.startTime.textContent = this.formatTime(status.startTime);
+
+        this.updateConnectionStatus(status.isConnected ? 'connected' : 'disconnected');
+
+        if (status.connectionSteps) {
+            Object.entries(status.connectionSteps).forEach(([step, stepStatus]) => {
+                this.stepsManager.updateStep(step, stepStatus.status ? 'complete' : stepStatus.error ? 'error' : 'pending', stepStatus.error);
+            });
+        }
+
+        if (status.logs) {
+            status.logs.forEach(log => {
+                this.logger.add(log.message, log.type, log.details);
+            });
+        }
     }
 
     formatTime(date) {
@@ -81,72 +179,20 @@ class UIManager {
     }
 
     formatUptime(milliseconds) {
-        const seconds = Math.floor(milliseconds / 1000);
-        const minutes = Math.floor(seconds / 60);
-        const hours = Math.floor(minutes / 60);
-        const days = Math.floor(hours / 24);
-
-        if (days > 0) {
-            return `${days}天${hours % 24}小时${minutes % 60}分钟`;
-        }
-        if (hours > 0) {
-            return `${hours}小时${minutes % 60}分钟`;
-        }
-        return `${minutes}分钟`;
-    }
-
-    updateConnectionStatus(isConnected, message = '') {
-        this.elements.connectionStatus.textContent = isConnected ? '已连接' : '未连接';
-        this.elements.connectionIndicator.className = 
-            `w-3 h-3 rounded-full ${isConnected ? 'status-connected' : 'status-disconnected'}`;
-        
-        if (message) {
-            this.logger.add(message, isConnected ? 'success' : 'error');
-        }
-    }
-
-    updateStatus(status) {
-        if (!status) return;
-
-        this.elements.currentRoom.textContent = status.roomId || '-';
-        this.elements.userId.textContent = status.userId || '-';
-        this.elements.nickname.textContent = status.nickname || '-';
-        this.elements.lastHeartbeat.textContent = this.formatTime(status.lastHeartbeat);
-        this.elements.lastReport.textContent = this.formatTime(status.lastReport);
-        this.elements.uptime.textContent = this.formatUptime(Date.now() - new Date(status.startTime).getTime());
-        this.elements.retryCount.textContent = status.retryCount;
-        this.elements.startTime.textContent = this.formatTime(status.startTime);
-
-        this.updateConnectionStatus(status.isConnected);
-
-        const systemStatusClass = status.isConnected ? 'system-status-normal' : 'system-status-error';
-        this.elements.systemStatus.className = `system-status ${systemStatusClass}`;
-        this.elements.systemStatus.textContent = status.isConnected ? '正常' : '异常';
+        const hours = Math.floor(milliseconds / (1000 * 60 * 60));
+        const minutes = Math.floor((milliseconds % (1000 * 60 * 60)) / (1000 * 60));
+        return `${hours}小时${minutes}分钟`;
     }
 
     updateSystemTime() {
         this.elements.systemTime.textContent = new Date().toLocaleString('zh-CN', { hour12: false });
     }
 
-    showError(message) {
-        this.logger.add(message, 'error');
-    }
-
-    showSuccess(message) {
-        this.logger.add(message, 'success');
-    }
-
-    showLoading(isLoading = true) {
+    showLoading(isLoading) {
         const submitButton = this.elements.configForm.querySelector('button[type="submit"]');
-        if (isLoading) {
-            submitButton.disabled = true;
-            submitButton.classList.add('loading');
-            submitButton.textContent = '连接中...';
-        } else {
-            submitButton.disabled = false;
-            submitButton.classList.remove('loading');
-            submitButton.textContent = '启动连接';
-        }
+        submitButton.disabled = isLoading;
+        submitButton.textContent = isLoading ? '连接中...' : '启动连接';
+        submitButton.classList.toggle('loading', isLoading);
     }
 }
 
@@ -173,16 +219,11 @@ class APIManager {
     }
 
     async getStatus() {
-        try {
-            const response = await fetch(`${this.baseUrl}/api/status`);
-            if (!response.ok) {
-                throw new Error('获取状态失败');
-            }
-            return response.json();
-        } catch (error) {
-            console.error('状态获取失败:', error);
-            throw error;
+        const response = await fetch(`${this.baseUrl}/api/status`);
+        if (!response.ok) {
+            throw new Error('获取状态失败');
         }
+        return response.json();
     }
 }
 
@@ -206,16 +247,16 @@ class App {
                     cookie: formData.get('cookie')
                 };
 
-                state.roomId = config.roomId;
-
+                this.ui.stepsManager.reset();
+                this.ui.updateConnectionStatus('connecting');
+                
                 const result = await this.api.updateConfig(config);
-                this.ui.showSuccess(`连接成功: ${result.message}`);
-                state.isConnected = true;
-
+                this.ui.logger.add('连接成功: ' + result.message, 'success');
+                
                 await this.updateStatus();
             } catch (error) {
-                this.ui.showError(`连接失败: ${error.message}`);
-                state.isConnected = false;
+                this.ui.logger.add('连接失败: ' + error.message, 'error');
+                this.ui.updateConnectionStatus('disconnected');
             } finally {
                 this.ui.showLoading(false);
             }
@@ -230,15 +271,9 @@ class App {
         try {
             const status = await this.api.getStatus();
             this.ui.updateStatus(status);
-            state.lastUpdate = new Date();
-            state.retryAttempts = 0;
         } catch (error) {
             console.error('状态更新失败:', error);
-            if (++state.retryAttempts >= state.maxRetries) {
-                this.ui.showError('状态更新失败，连接可能已断开');
-                state.isConnected = false;
-                this.ui.updateConnectionStatus(false);
-            }
+            this.ui.updateConnectionStatus('disconnected');
         }
     }
 
@@ -254,5 +289,4 @@ class App {
 // 初始化应用
 document.addEventListener('DOMContentLoaded', () => {
     const app = new App();
-    app.updateStatus().catch(console.error);
 });

@@ -9,20 +9,20 @@
 </head>
 <body class="bg-gray-50 min-h-screen">
     <div class="container mx-auto px-4 py-8 max-w-4xl">
-        <!-- 系统状态概览 -->
+        <!-- 状态概览区域 -->
         <div class="bg-white rounded-lg shadow-lg p-6 mb-8">
             <div class="flex justify-between items-center mb-6">
                 <h1 class="text-2xl font-bold text-gray-800">点点开黑房间管理系统</h1>
                 <div class="flex items-center">
-                    <div id="connectionIndicator" class="w-3 h-3 rounded-full bg-gray-400 mr-2"></div>
-                    <div id="systemTime" class="text-sm text-gray-600"></div>
+                    <div id="connectionIndicator" class="status-indicator"></div>
+                    <div id="systemTime" class="text-sm text-gray-600 font-mono"></div>
                 </div>
             </div>
             
             <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <!-- 房间状态信息 -->
+                <!-- 连接状态卡片 -->
                 <div class="bg-gradient-to-br from-blue-50 to-blue-100 p-4 rounded-lg">
-                    <h2 class="text-lg font-semibold text-blue-800 mb-4">房间状态</h2>
+                    <h2 class="text-lg font-semibold text-blue-800 mb-4">连接状态</h2>
                     <div class="space-y-3">
                         <div class="flex items-center justify-between">
                             <span class="text-gray-600">房间 ID:</span>
@@ -51,7 +51,7 @@
                     </div>
                 </div>
 
-                <!-- 系统信息 -->
+                <!-- 系统信息卡片 -->
                 <div class="bg-gradient-to-br from-green-50 to-green-100 p-4 rounded-lg">
                     <h2 class="text-lg font-semibold text-green-800 mb-4">系统信息</h2>
                     <div class="space-y-3">
@@ -74,9 +74,17 @@
                     </div>
                 </div>
             </div>
+
+            <!-- 连接步骤进度 -->
+            <div class="mt-6">
+                <h3 class="text-sm font-medium text-gray-700 mb-3">连接步骤进度</h3>
+                <div id="connectionSteps" class="space-y-2">
+                    <!-- 步骤将通过 JavaScript 动态添加 -->
+                </div>
+            </div>
         </div>
 
-        <!-- 配置表单 -->
+        <!-- 配置表单区域 -->
         <div class="bg-white rounded-lg shadow-lg p-6 mb-8">
             <h2 class="text-xl font-semibold text-gray-800 mb-6">房间配置</h2>
             <form id="configForm" class="space-y-6">
@@ -85,9 +93,9 @@
                     <label class="block text-sm font-medium text-gray-700 mb-2" for="roomId">
                         房间 ID
                     </label>
-                    <div class="mt-1 flex rounded-md shadow-sm">
+                    <div class="mt-1">
                         <input type="text" name="roomId" id="roomId"
-                            class="flex-1 min-w-0 block w-full px-3 py-2 rounded-md border border-gray-300 focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                            class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
                             placeholder="输入房间ID" required pattern="\d+">
                     </div>
                     <p class="mt-2 text-sm text-gray-500">
@@ -102,7 +110,7 @@
                     </label>
                     <div class="mt-1">
                         <textarea id="cookie" name="cookie" rows="3"
-                            class="shadow-sm focus:ring-blue-500 focus:border-blue-500 block w-full sm:text-sm border border-gray-300 rounded-md p-2 font-mono"
+                            class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500 sm:text-sm font-mono"
                             placeholder="粘贴Cookie值" required></textarea>
                     </div>
                 </div>
@@ -118,31 +126,31 @@
                         <li>在筛选器中选择"XHR"</li>
                         <li>刷新页面</li>
                         <li>找到 getuserinfo 请求</li>
-                        <li>在请求标头中复制Cookie的完整值</li>
+                        <li>在请求标头中复制Cookie值</li>
                     </ol>
                 </div>
 
                 <!-- 提交按钮 -->
                 <div class="flex justify-end">
                     <button type="submit"
-                        class="px-6 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition duration-200">
+                        class="px-6 py-2 bg-blue-600 text-white font-medium rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition duration-200">
                         启动连接
                     </button>
                 </div>
             </form>
         </div>
 
-        <!-- 运行日志 -->
+        <!-- 运行日志区域 -->
         <div class="bg-white rounded-lg shadow-lg p-6">
             <div class="flex justify-between items-center mb-4">
                 <h2 class="text-xl font-semibold text-gray-800">运行日志</h2>
-                <button id="clearLogs"
+                <button id="clearLogs" 
                     class="text-sm text-gray-500 hover:text-gray-700 focus:outline-none transition duration-200">
                     清除日志
                 </button>
             </div>
-            <div id="logContainer"
-                class="h-64 overflow-y-auto bg-gray-50 rounded-lg p-4 font-mono text-sm">
+            <div id="logContainer" class="space-y-2">
+                <!-- 日志条目将通过 JavaScript 动态添加 -->
             </div>
         </div>
     </div>

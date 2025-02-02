@@ -11,11 +11,64 @@ body {
     -moz-osx-font-smoothing: grayscale;
 }
 
-/* 日志容器样式优化 */
-#logContainer {
-    background-color: #f8fafc;
+/* 连接状态指示器 */
+.status-indicator {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    margin-right: 8px;
     transition: background-color 0.3s ease;
+}
+
+.status-connected {
+    background-color: #10b981;
+    box-shadow: 0 0 0 rgba(16, 185, 129, 0.4);
+    animation: pulse 2s infinite;
+}
+
+.status-disconnected {
+    background-color: #ef4444;
+}
+
+.status-connecting {
+    background-color: #f59e0b;
+    animation: blink 1s infinite;
+}
+
+/* 连接步骤样式 */
+.connection-step {
+    display: flex;
+    align-items: center;
+    padding: 8px;
+    border-radius: 4px;
+    margin-bottom: 4px;
+    background-color: #f3f4f6;
+}
+
+.step-complete {
+    border-left: 3px solid #10b981;
+    background-color: #f0fdf4;
+}
+
+.step-pending {
+    border-left: 3px solid #f59e0b;
+    background-color: #fef3c7;
+}
+
+.step-error {
+    border-left: 3px solid #ef4444;
+    background-color: #fef2f2;
+}
+
+/* 日志容器样式 */
+#logContainer {
+    height: 300px;
+    overflow-y: auto;
+    background-color: #f8fafc;
     border: 1px solid #e2e8f0;
+    border-radius: 6px;
+    padding: 12px;
 }
 
 #logContainer::-webkit-scrollbar {
@@ -37,122 +90,62 @@ body {
     background: #64748b;
 }
 
-/* 日志条目样式设计 */
+/* 日志条目样式 */
 .log-entry {
     padding: 6px 8px;
     margin-bottom: 4px;
     border-radius: 4px;
-    transition: all 0.2s ease;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.875rem;
+    line-height: 1.5;
     animation: fadeIn 0.3s ease;
-    border-left: 3px solid transparent;
-}
-
-.log-entry:last-child {
-    margin-bottom: 0;
 }
 
 .log-timestamp {
     color: #64748b;
     margin-right: 8px;
-    font-size: 0.9em;
-    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.8125rem;
+}
+
+.log-type {
+    display: inline-block;
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-size: 0.75rem;
+    font-weight: 500;
+    margin-right: 8px;
+}
+
+.log-type-info {
+    background-color: #e0f2fe;
+    color: #0369a1;
+}
+
+.log-type-error {
+    background-color: #fee2e2;
+    color: #dc2626;
+}
+
+.log-type-success {
+    background-color: #dcfce7;
+    color: #059669;
 }
 
 .log-content {
     color: #334155;
 }
 
-.log-error {
-    color: #dc2626;
-    background-color: #fef2f2;
-    border-left-color: #dc2626;
+.log-details {
+    margin-top: 4px;
+    padding: 4px 8px;
+    background-color: #f8fafc;
+    border-radius: 3px;
+    font-size: 0.8125rem;
+    color: #64748b;
+    white-space: pre-wrap;
 }
 
-.log-success {
-    color: #059669;
-    background-color: #f0fdf4;
-    border-left-color: #059669;
-}
-
-/* 连接状态指示器 */
-#connectionIndicator {
-    transition: all 0.3s ease;
-}
-
-.status-connected {
-    background-color: #10b981;
-    box-shadow: 0 0 0 rgba(16, 185, 129, 0.4);
-    animation: pulse 2s infinite;
-}
-
-.status-disconnected {
-    background-color: #ef4444;
-}
-
-.status-connecting {
-    background-color: #f59e0b;
-    animation: blink 1s infinite;
-}
-
-/* 表单元素样式优化 */
-input:focus, textarea:focus {
-    outline: none;
-    border-color: #3b82f6;
-    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
-}
-
-textarea {
-    font-family: 'JetBrains Mono', monospace;
-    resize: vertical;
-    min-height: 80px;
-}
-
-/* 按钮状态样式 */
-button:disabled {
-    opacity: 0.7;
-    cursor: not-allowed;
-}
-
-button {
-    transition: all 0.2s ease;
-}
-
-/* 系统状态指示器 */
-.system-status {
-    display: inline-flex;
-    align-items: center;
-    padding: 2px 8px;
-    border-radius: 9999px;
-    font-size: 0.875rem;
-    font-weight: 500;
-}
-
-.system-status-normal {
-    background-color: #d1fae5;
-    color: #059669;
-}
-
-.system-status-warning {
-    background-color: #fef3c7;
-    color: #d97706;
-}
-
-.system-status-error {
-    background-color: #fee2e2;
-    color: #dc2626;
-}
-
-/* 卡片容器阴影效果 */
-.card {
-    box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06);
-    transition: box-shadow 0.3s ease;
-}
-
-.card:hover {
-    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
-}
-
-/* 动画效果定义 */
+/* 动画效果 */
 @keyframes pulse {
     0% {
         box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.4);
@@ -177,7 +170,7 @@ button {
 @keyframes fadeIn {
     from {
         opacity: 0;
-        transform: translateY(-10px);
+        transform: translateY(-4px);
     }
     to {
         opacity: 1;
@@ -185,53 +178,15 @@ button {
     }
 }
 
-/* 加载状态动画 */
-.loading {
-    position: relative;
-    pointer-events: none;
-}
-
-.loading::after {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background: linear-gradient(
-        90deg,
-        rgba(255, 255, 255, 0) 0%,
-        rgba(255, 255, 255, 0.2) 50%,
-        rgba(255, 255, 255, 0) 100%
-    );
-    animation: shimmer 1.5s infinite;
-}
-
-@keyframes shimmer {
-    0% {
-        transform: translateX(-100%);
-    }
-    100% {
-        transform: translateX(100%);
-    }
-}
-
-/* 响应式设计调整 */
+/* 响应式调整 */
 @media (max-width: 640px) {
-    .container {
-        padding-left: 1rem;
-        padding-right: 1rem;
+    .connection-step {
+        flex-direction: column;
+        align-items: flex-start;
     }
-
-    h1 {
-        font-size: 1.5rem;
-    }
-
-    h2 {
-        font-size: 1.25rem;
-    }
-
-    .grid {
-        grid-template-columns: 1fr;
+    
+    .step-timestamp {
+        margin-top: 4px;
+        font-size: 0.75rem;
     }
 }
