@@ -14,7 +14,8 @@ const CONFIG = {
     NIM_APP_KEY: '712eb79f6472f09e9d8f19aecba1cf43',
     HEARTBEAT_INTERVAL: 30000,
     MAX_RETRIES: 3,
-    API_BASE_URL: 'https://papi.tuwan.com'
+    API_BASE_URL: 'https://papi.tuwan.com',
+    USER_ID: '3286219'  // Your confirmed user ID
 };
 
 const globalState = {
@@ -39,8 +40,6 @@ const api = axios.create({
         'Accept': '*/*',
         'Accept-Language': 'zh-CN,zh;q=0.9',
         'Accept-Encoding': 'gzip, deflate, br',
-        'Cache-Control': 'no-cache',
-        'Pragma': 'no-cache',
         'Sec-Ch-Ua': '"Not A(Brand";v="8", "Chromium";v="132"',
         'Sec-Ch-Ua-Mobile': '?0',
         'Sec-Ch-Ua-Platform': '"Windows"'
@@ -54,7 +53,7 @@ function generateCallback() {
 function parseJsonp(response) {
     try {
         if (!response?.data) {
-            console.error('JSONP响应为空');
+            console.error('Empty JSONP response');
             return null;
         }
 
@@ -62,30 +61,29 @@ function parseJsonp(response) {
         const match = data.match(/jQuery[0-9_]+\((.*)\)/);
         
         if (!match?.[1]) {
-            console.error('JSONP格式无效:', data);
+            console.error('Invalid JSONP format:', data);
             return null;
         }
 
         try {
-            const jsonData = JSON.parse(match[1]);
-            return jsonData;
+            return JSON.parse(match[1]);
         } catch (e) {
-            console.error('JSON解析失败:', e);
+            console.error('JSON parsing failed:', e);
             return null;
         }
     } catch (error) {
-        console.error('JSONP解析错误:', error.message);
-        console.error('原始响应:', response.data);
+        console.error('JSONP parsing error:', error.message);
+        console.error('Raw response:', response.data);
         return null;
     }
 }
 
 async function getUserInfo() {
     try {
-        // 获取基础用户信息
-        const userInfoResponse = await api.get(`${CONFIG.API_BASE_URL}/Chatroom/getuserinfo`, {
+        // Initial base URL request
+        await api.get(`${CONFIG.API_BASE_URL}/Api/getBaseUrl`, {
             params: {
-                requestfrom: 'selflogin',
+                format: 'jsonp',
                 callback: generateCallback(),
                 _: Date.now()
             },
@@ -96,20 +94,35 @@ async function getUserInfo() {
             }
         });
 
-        console.log('用户信息原始响应:', userInfoResponse.data);
+        // Get user information
+        const userInfoResponse = await api.get(`${CONFIG.API_BASE_URL}/Chatroom/getuserinfo`, {
+            params: {
+                requestfrom: 'selflogin',
+                uids: CONFIG.USER_ID,
+                callback: generateCallback(),
+                _: Date.now()
+            },
+            headers: {
+                'Cookie': globalState.cookie,
+                'Referer': 'https://y.tuwan.com/',
+                'Origin': 'https://y.tuwan.com'
+            }
+        });
+
+        console.log('User info response:', userInfoResponse.data);
         const userData = parseJsonp(userInfoResponse);
-        
+
         if (!userData || userData.error !== 0) {
-            throw new Error('用户验证失败');
+            throw new Error('User verification failed');
         }
 
         if (!Array.isArray(userData.data) || !userData.data[0]) {
-            throw new Error('用户数据为空');
+            throw new Error('Invalid user data format');
         }
 
         const user = userData.data[0];
         if (!user.uid || !user.nickname) {
-            throw new Error('缺少必要的用户信息');
+            throw new Error('Missing required user information');
         }
 
         return {
@@ -117,7 +130,7 @@ async function getUserInfo() {
             data: user
         };
     } catch (error) {
-        console.error('获取用户信息失败:', error.message);
+        console.error('Failed to get user info:', error);
         return {
             success: false,
             error: error.message
@@ -127,7 +140,7 @@ async function getUserInfo() {
 
 async function joinRoom() {
     if (!globalState.cookie || !globalState.roomId) {
-        throw new Error('缺少必要的配置信息');
+        throw new Error('Missing required configuration');
     }
 
     const headers = {
@@ -135,27 +148,26 @@ async function joinRoom() {
         'Accept': '*/*',
         'Accept-Language': 'zh-CN,zh;q=0.9',
         'Cookie': globalState.cookie,
-        'Referer': `https://y.tuwan.com/chatroom/${globalState.roomId}`,
-        'Origin': 'https://y.tuwan.com',
-        'Cache-Control': 'no-cache'
+        'Referer': 'https://y.tuwan.com/',
+        'Origin': 'https://y.tuwan.com'
     };
 
     try {
-        // 获取用户信息
+        // Get user information
         const userResult = await getUserInfo();
         if (!userResult.success) {
-            throw new Error('获取用户信息失败: ' + userResult.error);
+            throw new Error('Failed to get user info: ' + userResult.error);
         }
 
         globalState.userId = userResult.data.uid;
         globalState.nickname = userResult.data.nickname;
 
-        console.log('用户信息获取成功:', {
+        console.log('User info retrieved successfully:', {
             userId: globalState.userId,
             nickname: globalState.nickname
         });
 
-        // 获取房间列表
+        // Get room list
         await api.get(`${CONFIG.API_BASE_URL}/Chatroom/getPcListV4`, {
             params: {
                 ver: '14',
@@ -171,34 +183,40 @@ async function joinRoom() {
             }
         });
 
-        // 获取在线用户列表
-        await api.get(`${CONFIG.API_BASE_URL}/Chatroom/getuserinfo`, {
+        // Get web info
+        await api.get(`${CONFIG.API_BASE_URL}/Agora/webinfo`, {
             params: {
-                requestfrom: 'addChannelUsers',
-                uids: globalState.userId,
+                apiver: '6',
+                channel: globalState.roomId,
                 callback: generateCallback(),
                 _: Date.now()
             },
-            headers
+            headers: {
+                ...headers,
+                'Referer': `https://y.tuwan.com/chatroom/${globalState.roomId}`
+            }
         });
 
-        // 获取NIM Token
+        // Get NIM token
         const loginResponse = await api.get('https://u.tuwan.com/Netease/login', {
             params: {
                 callback: generateCallback(),
                 _: Date.now()
             },
-            headers
+            headers: {
+                ...headers,
+                'Referer': `https://y.tuwan.com/chatroom/${globalState.roomId}`
+            }
         });
 
         const loginData = parseJsonp(loginResponse);
         if (!loginData?.token) {
-            throw new Error('获取登录令牌失败');
+            throw new Error('Failed to get login token');
         }
 
         globalState.nimToken = loginData.token;
 
-        // 加入房间
+        // Join room
         await api.post('https://app-diandian-report.tuwan.com/', 
             qs.stringify({
                 roomId: globalState.roomId,
@@ -211,12 +229,27 @@ async function joinRoom() {
             { 
                 headers: {
                     ...headers,
-                    'Content-Type': 'application/x-www-form-urlencoded'
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                    'Referer': `https://y.tuwan.com/chatroom/${globalState.roomId}`
                 }
             }
         );
 
-        // 更新在线状态
+        // Update room user list
+        await api.get(`${CONFIG.API_BASE_URL}/Chatroom/getuserinfo`, {
+            params: {
+                requestfrom: 'addChannelUsers',
+                uids: globalState.userId,
+                callback: generateCallback(),
+                _: Date.now()
+            },
+            headers: {
+                ...headers,
+                'Referer': `https://y.tuwan.com/chatroom/${globalState.roomId}`
+            }
+        });
+
+        // Update online status
         await api.post('https://app-diandian-report.tuwan.com/', 
             qs.stringify({
                 roomId: globalState.roomId,
@@ -227,19 +260,20 @@ async function joinRoom() {
             { 
                 headers: {
                     ...headers,
-                    'Content-Type': 'application/x-www-form-urlencoded'
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                    'Referer': `https://y.tuwan.com/chatroom/${globalState.roomId}`
                 }
             }
         );
 
-        console.log('进房流程完成');
+        console.log('Room join process completed');
         globalState.isConnected = true;
         globalState.retryCount = 0;
         startHeartbeat();
         return true;
 
     } catch (error) {
-        console.error('进房流程出错:', error);
+        console.error('Room join process failed:', error);
         throw error;
     }
 }
@@ -257,7 +291,6 @@ async function sendHeartbeat() {
     };
 
     try {
-        // 发送活动心跳
         await api.get('https://activity.tuwan.com/Activitymanagement/activity', {
             params: {
                 cid: globalState.roomId,
@@ -268,7 +301,6 @@ async function sendHeartbeat() {
             headers
         });
 
-        // 更新在线状态
         await api.post('https://app-diandian-report.tuwan.com/', 
             qs.stringify({
                 roomId: globalState.roomId,
@@ -288,7 +320,7 @@ async function sendHeartbeat() {
         globalState.lastReport = new Date();
         return true;
     } catch (error) {
-        console.error('心跳发送失败:', error);
+        console.error('Heartbeat failed:', error);
         globalState.retryCount++;
         
         if (globalState.retryCount >= CONFIG.MAX_RETRIES) {
@@ -300,16 +332,16 @@ async function sendHeartbeat() {
 }
 
 async function reconnect() {
-    console.log('开始重新连接...');
+    console.log('Starting reconnection...');
     globalState.isConnected = false;
     clearInterval(globalState.heartbeatInterval);
 
     try {
         await joinRoom();
-        console.log('重新连接成功');
+        console.log('Reconnection successful');
         globalState.retryCount = 0;
     } catch (error) {
-        console.error('重新连接失败:', error);
+        console.error('Reconnection failed:', error);
         throw error;
     }
 }
@@ -331,7 +363,7 @@ app.post('/api/update-config', async (req, res) => {
     if (!roomId || !cookie) {
         return res.status(400).json({
             success: false,
-            message: '请提供完整的配置信息'
+            message: 'Please provide complete configuration information'
         });
     }
 
@@ -348,16 +380,16 @@ app.post('/api/update-config', async (req, res) => {
 
         res.json({
             success: true,
-            message: '成功进入房间',
+            message: 'Successfully joined room',
             data: {
-                roomId: roomId,
+                roomId,
                 userId: globalState.userId,
                 nickname: globalState.nickname,
                 timestamp: Date.now()
             }
         });
     } catch (error) {
-        console.error('配置更新失败:', error);
+        console.error('Configuration update failed:', error);
         res.status(500).json({
             success: false,
             message: error.message
@@ -388,7 +420,7 @@ app.get('/health', (req, res) => {
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-    console.log(`服务器启动成功，监听端口 ${PORT}`);
+    console.log(`Server started successfully, listening on port ${PORT}`);
 });
 
 module.exports = app;
