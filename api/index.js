@@ -10,7 +10,7 @@ app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, '../public')));
 
 const CONFIG = {
-    USER_AGENT: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
+    USER_AGENT: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36',
     NIM_APP_KEY: '712eb79f6472f09e9d8f19aecba1cf43',
     HEARTBEAT_INTERVAL: 30000,
     MAX_RETRIES: 3,
@@ -39,14 +39,16 @@ const api = axios.create({
         'Accept': '*/*',
         'Accept-Language': 'zh-CN,zh;q=0.9',
         'Accept-Encoding': 'gzip, deflate, br',
-        'Connection': 'keep-alive'
+        'Cache-Control': 'no-cache',
+        'Pragma': 'no-cache',
+        'Sec-Ch-Ua': '"Not A(Brand";v="8", "Chromium";v="132"',
+        'Sec-Ch-Ua-Mobile': '?0',
+        'Sec-Ch-Ua-Platform': '"Windows"'
     }
 });
 
 function generateCallback() {
-    const timestamp = Date.now();
-    const random = Math.random().toString().slice(2, 8);
-    return `jQuery${random}_${timestamp}`;
+    return `jQuery${Math.random().toString().slice(2)}_${Date.now()}`;
 }
 
 function parseJsonp(response) {
@@ -57,14 +59,20 @@ function parseJsonp(response) {
         }
 
         const data = response.data.toString().trim();
-        const match = data.match(/jQuery\d+_\d+\((.*)\)/);
+        const match = data.match(/jQuery[0-9_]+\((.*)\)/);
         
         if (!match?.[1]) {
             console.error('JSONP格式无效:', data);
             return null;
         }
 
-        return JSON.parse(match[1]);
+        try {
+            const jsonData = JSON.parse(match[1]);
+            return jsonData;
+        } catch (e) {
+            console.error('JSON解析失败:', e);
+            return null;
+        }
     } catch (error) {
         console.error('JSONP解析错误:', error.message);
         console.error('原始响应:', response.data);
@@ -72,46 +80,30 @@ function parseJsonp(response) {
     }
 }
 
-function extractUserIdFromCookie(cookie) {
-    const uidMatch = cookie.match(/tuwan_user=(\d+)/);
-    if (!uidMatch) {
-        throw new Error('无法从Cookie中获取用户ID');
-    }
-    return uidMatch[1];
-}
-
 async function getUserInfo() {
     try {
-        const uid = extractUserIdFromCookie(globalState.cookie);
-        console.log('从Cookie提取的用户ID:', uid);
-
+        // 获取基础用户信息
         const userInfoResponse = await api.get(`${CONFIG.API_BASE_URL}/Chatroom/getuserinfo`, {
             params: {
                 requestfrom: 'selflogin',
-                uids: uid,
                 callback: generateCallback(),
                 _: Date.now()
             },
             headers: {
                 'Cookie': globalState.cookie,
                 'Referer': 'https://y.tuwan.com/',
-                'Cache-Control': 'no-cache'
+                'Origin': 'https://y.tuwan.com'
             }
         });
 
         console.log('用户信息原始响应:', userInfoResponse.data);
         const userData = parseJsonp(userInfoResponse);
-        console.log('解析后的用户数据:', userData);
-
-        if (!userData) {
-            throw new Error('解析用户数据失败');
+        
+        if (!userData || userData.error !== 0) {
+            throw new Error('用户验证失败');
         }
 
-        if (userData.error !== 0) {
-            throw new Error(`API返回错误: ${userData.message || '未知错误'}`);
-        }
-
-        if (!Array.isArray(userData.data) || userData.data.length === 0) {
+        if (!Array.isArray(userData.data) || !userData.data[0]) {
             throw new Error('用户数据为空');
         }
 
@@ -143,7 +135,7 @@ async function joinRoom() {
         'Accept': '*/*',
         'Accept-Language': 'zh-CN,zh;q=0.9',
         'Cookie': globalState.cookie,
-        'Referer': 'https://y.tuwan.com/',
+        'Referer': `https://y.tuwan.com/chatroom/${globalState.roomId}`,
         'Origin': 'https://y.tuwan.com',
         'Cache-Control': 'no-cache'
     };
@@ -179,16 +171,24 @@ async function joinRoom() {
             }
         });
 
+        // 获取在线用户列表
+        await api.get(`${CONFIG.API_BASE_URL}/Chatroom/getuserinfo`, {
+            params: {
+                requestfrom: 'addChannelUsers',
+                uids: globalState.userId,
+                callback: generateCallback(),
+                _: Date.now()
+            },
+            headers
+        });
+
         // 获取NIM Token
         const loginResponse = await api.get('https://u.tuwan.com/Netease/login', {
             params: {
                 callback: generateCallback(),
                 _: Date.now()
             },
-            headers: {
-                ...headers,
-                'Referer': `https://y.tuwan.com/chatroom/${globalState.roomId}`
-            }
+            headers
         });
 
         const loginData = parseJsonp(loginResponse);
@@ -211,9 +211,8 @@ async function joinRoom() {
             { 
                 headers: {
                     ...headers,
-                    'Content-Type': 'application/x-www-form-urlencoded',
-                    'Referer': `https://y.tuwan.com/chatroom/${globalState.roomId}`
-                } 
+                    'Content-Type': 'application/x-www-form-urlencoded'
+                }
             }
         );
 
@@ -228,8 +227,7 @@ async function joinRoom() {
             { 
                 headers: {
                     ...headers,
-                    'Content-Type': 'application/x-www-form-urlencoded',
-                    'Referer': `https://y.tuwan.com/chatroom/${globalState.roomId}`
+                    'Content-Type': 'application/x-www-form-urlencoded'
                 }
             }
         );
@@ -259,6 +257,7 @@ async function sendHeartbeat() {
     };
 
     try {
+        // 发送活动心跳
         await api.get('https://activity.tuwan.com/Activitymanagement/activity', {
             params: {
                 cid: globalState.roomId,
@@ -269,6 +268,7 @@ async function sendHeartbeat() {
             headers
         });
 
+        // 更新在线状态
         await api.post('https://app-diandian-report.tuwan.com/', 
             qs.stringify({
                 roomId: globalState.roomId,
@@ -350,7 +350,7 @@ app.post('/api/update-config', async (req, res) => {
             success: true,
             message: '成功进入房间',
             data: {
-                roomId,
+                roomId: roomId,
                 userId: globalState.userId,
                 nickname: globalState.nickname,
                 timestamp: Date.now()
