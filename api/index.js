@@ -13,7 +13,8 @@ const CONFIG = {
     USER_AGENT: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
     NIM_APP_KEY: '712eb79f6472f09e9d8f19aecba1cf43',
     HEARTBEAT_INTERVAL: 30000,
-    MAX_RETRIES: 3
+    MAX_RETRIES: 3,
+    API_BASE_URL: 'https://papi.tuwan.com'
 };
 
 const globalState = {
@@ -22,7 +23,6 @@ const globalState = {
     userId: '',
     nickname: '',
     nimToken: '',
-    passportValue: '',
     lastHeartbeat: null,
     lastReport: null,
     isConnected: false,
@@ -33,16 +33,20 @@ const globalState = {
 
 const api = axios.create({
     timeout: 10000,
+    validateStatus: status => status >= 200 && status < 300,
     headers: {
         'User-Agent': CONFIG.USER_AGENT,
         'Accept': '*/*',
         'Accept-Language': 'zh-CN,zh;q=0.9',
-        'Accept-Encoding': 'gzip, deflate, br'
+        'Accept-Encoding': 'gzip, deflate, br',
+        'Connection': 'keep-alive'
     }
 });
 
 function generateCallback() {
-    return `jQuery${Math.random().toString().slice(2)}_${Date.now()}`;
+    const timestamp = Date.now();
+    const random = Math.random().toString().slice(2, 8);
+    return `jQuery${random}_${timestamp}`;
 }
 
 function parseJsonp(response) {
@@ -52,58 +56,76 @@ function parseJsonp(response) {
             return null;
         }
 
-        const data = response.data.trim();
-        const match = data.match(/(?:jQuery[0-9_]+\(|\()(.+?)(?:\))?$/);
+        const data = response.data.toString().trim();
+        const match = data.match(/jQuery\d+_\d+\((.*)\)/);
+        
         if (!match?.[1]) {
             console.error('JSONP格式无效:', data);
             return null;
         }
 
-        const jsonData = JSON.parse(match[1]);
-        console.log('解析JSONP数据:', jsonData);
-        return jsonData;
+        return JSON.parse(match[1]);
     } catch (error) {
-        console.error('JSONP解析错误:', error, '原始数据:', response.data);
+        console.error('JSONP解析错误:', error.message);
+        console.error('原始响应:', response.data);
         return null;
     }
 }
 
-async function getUserInfo(headers) {
+function extractUserIdFromCookie(cookie) {
+    const uidMatch = cookie.match(/tuwan_user=(\d+)/);
+    if (!uidMatch) {
+        throw new Error('无法从Cookie中获取用户ID');
+    }
+    return uidMatch[1];
+}
+
+async function getUserInfo() {
     try {
-        console.log('开始获取用户信息...');
-        
-        const userInfoResponse = await api.get('https://papi.tuwan.com/Chatroom/getuserinfo', {
+        const uid = extractUserIdFromCookie(globalState.cookie);
+        console.log('从Cookie提取的用户ID:', uid);
+
+        const userInfoResponse = await api.get(`${CONFIG.API_BASE_URL}/Chatroom/getuserinfo`, {
             params: {
                 requestfrom: 'selflogin',
+                uids: uid,
                 callback: generateCallback(),
-                _: Date.now(),
-                t: Date.now()
+                _: Date.now()
             },
             headers: {
-                ...headers,
+                'Cookie': globalState.cookie,
                 'Referer': 'https://y.tuwan.com/',
-                'Cache-Control': 'no-cache',
-                'Pragma': 'no-cache'
+                'Cache-Control': 'no-cache'
             }
         });
 
         console.log('用户信息原始响应:', userInfoResponse.data);
-        
-        const userInfoData = parseJsonp(userInfoResponse);
-        if (!userInfoData || userInfoData.error !== 0) {
-            throw new Error('用户验证失败');
+        const userData = parseJsonp(userInfoResponse);
+        console.log('解析后的用户数据:', userData);
+
+        if (!userData) {
+            throw new Error('解析用户数据失败');
         }
 
-        if (!userInfoData.data?.[0]?.uid) {
-            throw new Error('用户数据格式无效');
+        if (userData.error !== 0) {
+            throw new Error(`API返回错误: ${userData.message || '未知错误'}`);
+        }
+
+        if (!Array.isArray(userData.data) || userData.data.length === 0) {
+            throw new Error('用户数据为空');
+        }
+
+        const user = userData.data[0];
+        if (!user.uid || !user.nickname) {
+            throw new Error('缺少必要的用户信息');
         }
 
         return {
             success: true,
-            data: userInfoData.data[0]
+            data: user
         };
     } catch (error) {
-        console.error('获取用户信息失败:', error);
+        console.error('获取用户信息失败:', error.message);
         return {
             success: false,
             error: error.message
@@ -123,13 +145,12 @@ async function joinRoom() {
         'Cookie': globalState.cookie,
         'Referer': 'https://y.tuwan.com/',
         'Origin': 'https://y.tuwan.com',
-        'Cache-Control': 'no-cache',
-        'Pragma': 'no-cache'
+        'Cache-Control': 'no-cache'
     };
 
     try {
         // 获取用户信息
-        const userResult = await getUserInfo(headers);
+        const userResult = await getUserInfo();
         if (!userResult.success) {
             throw new Error('获取用户信息失败: ' + userResult.error);
         }
@@ -143,7 +164,7 @@ async function joinRoom() {
         });
 
         // 获取房间列表
-        await api.get('https://papi.tuwan.com/Chatroom/getPcListV4', {
+        await api.get(`${CONFIG.API_BASE_URL}/Chatroom/getPcListV4`, {
             params: {
                 ver: '14',
                 format: 'jsonp',
@@ -177,7 +198,7 @@ async function joinRoom() {
 
         globalState.nimToken = loginData.token;
 
-        // 初始化房间
+        // 加入房间
         await api.post('https://app-diandian-report.tuwan.com/', 
             qs.stringify({
                 roomId: globalState.roomId,
@@ -329,7 +350,7 @@ app.post('/api/update-config', async (req, res) => {
             success: true,
             message: '成功进入房间',
             data: {
-                roomId: roomId,
+                roomId,
                 userId: globalState.userId,
                 nickname: globalState.nickname,
                 timestamp: Date.now()
